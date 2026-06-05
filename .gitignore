@@ -1,0 +1,38 @@
+# Environment variables
+.env
+.env.local
+
+# Virtual Environment
+env/
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Images captured
+visage.jpg
+
+# OS
+.DS_Store
+Thumbs.db
+
+#upload dolder
+uploads/
+test_foction/
+img/
+
