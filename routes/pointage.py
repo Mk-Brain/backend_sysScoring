@@ -1,15 +1,13 @@
 from pathlib import Path
 
-import face_recognition
-from fastapi import HTTPException
+
 
 from fastapi import APIRouter
+import cv2
 
-from datetime import  date
 
 from pyzbar.wrapper import ZBarSymbol
-from sqlalchemy import false, true
-from sqlalchemy.ext.asyncio import result
+
 
 from services.auth import get_current_user
 from database.database import get_db
@@ -22,10 +20,12 @@ from pyzbar.pyzbar import decode
 
 from utils.global_var import VideoSetting
 
-from datetime import date, datetime, time  # Ajout de datetime, time pour calculer_minutes_travail si besoin ailleurs
+from datetime import date, datetime, time# Ajout de datetime, time pour calculer_minutes_travail si besoin ailleurs
+
+import time as  tm
 import face_recognition
 from fastapi import HTTPException, Depends
-from sqlalchemy.orm import Session
+
 
 router = APIRouter(
     prefix="/pointage",
@@ -76,15 +76,53 @@ def chang_status(id: int, status: str, current_user: RequestModelEmp | None = De
 """lire le qr code"""
 @router.get('/scan_qr')
 def scan_qr(mat: str):
-    print("hello")
-    #qcd = cv2.QRCodeDetector()
     scan_result = None
-    #print(VideoSetting.frame)
-    """cv2.imshow('f1', mat=VideoSetting.frame )
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()"""
-    #while True:
-    print("hello")
+    timeout = 10  # Temps max de recherche en secondes
+    start_time = tm.time()
+
+    print("Début du scan QR code...")
+
+    # On boucle tant qu'on n'a pas dépassé le timeout et qu'aucun QR code n'est trouvé
+    while (tm.time() - start_time) < timeout:
+        print(tm.time() - start_time)
+        if VideoSetting.flag and VideoSetting.frame is not None:
+
+            # Analyse de la frame actuelle du flux
+
+            decoded_info = decode(VideoSetting.frame, symbols=[ZBarSymbol.QRCODE])
+            print("test")
+            for qrcode in decoded_info:
+                print("test1")
+                decoded_text = qrcode.data.decode("utf-8")
+                if mat in decoded_text:
+                    print("test 2")
+                    print("QR Code correspondant détecté !")
+                    scan_result = decoded_text
+                    break
+
+            if scan_result:
+                break  # On sort de la boucle while si on a trouvé
+
+        # Petite pause pour ne pas saturer le CPU (ex: 20 images par seconde)
+        tm.sleep(0.05)
+
+    # Si après la boucle (timeout), rien n'a été trouvé
+    if not scan_result:
+        print('Aucun QR code détecté dans le temps imparti')
+        raise HTTPException(status_code=400, detail="Aucun QR code détecté")
+
+    # Reste de votre logique Base de données
+    with get_db() as db:
+        emp = db.query(Employe).filter(Employe.qrCode == scan_result).first()
+
+    if not emp:
+        raise HTTPException(status_code=400, detail="Employé introuvable avec ce QR code")
+
+    return scan_result
+
+"""def scan_qr(mat: str):
+    scan_result = None
+
     if VideoSetting.flag:
             print("frame")
             decoded_info = decode(VideoSetting.frame, symbols=[ZBarSymbol.QRCODE])
@@ -93,7 +131,6 @@ def scan_qr(mat: str):
                 if mat in qrcode.data.decode("utf-8",):
                     print("rq")
                     scan_result = qrcode.data.decode("utf-8")
-
                     break
 
 
@@ -106,7 +143,7 @@ def scan_qr(mat: str):
 
     if not emp:
         raise HTTPException(status_code=400, detail="qrcode not found4")
-    return scan_result
+    return scan_result"""
 
 
 HEURE_LIMITE = time(8, 0)
