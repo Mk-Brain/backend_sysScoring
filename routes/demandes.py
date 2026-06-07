@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from fastapi import HTTPException, Form
 
@@ -44,7 +45,8 @@ async def new_inscrition(dem:ModelRequest = Form(media_type="multipart/form-data
     #verification de l'extension
     await verify_picture(dem.photo)
     await dem.photo.seek(0)
-    images_location = os.path.join(UPLOAD_DIR, f"{dem.matricule}.jpg")
+
+    images_location = str(Path(UPLOAD_DIR) / f"{dem.matricule}.jpg")
     with open(images_location, "wb") as f:
         content = await dem.photo.read()
         f.write(content)

@@ -1,7 +1,6 @@
 from pathlib import Path
 
-
-
+import numpy as np
 from fastapi import APIRouter
 import cv2
 
@@ -13,7 +12,8 @@ from services.auth import get_current_user
 from database.database import get_db
 from models.employe import Employe
 from models.pointages import Pointage, ScoringState
-from services.pointage import take_picture, encoding
+from services.employe import get_user_encoding
+from services.pointage import take_picture, encoding, IMG_DIR
 from shemas.employe import RequestModelEmp
 from shemas.pointage import ModelScoring
 from pyzbar.pyzbar import decode
@@ -77,41 +77,53 @@ def chang_status(id: int, status: str, current_user: RequestModelEmp | None = De
 @router.get('/scan_qr')
 def scan_qr(mat: str):
     scan_result = None
-    timeout = 10  # Temps max de recherche en secondes
+    timeout = 10
     start_time = tm.time()
 
     print("Début du scan QR code...")
 
-    # On boucle tant qu'on n'a pas dépassé le timeout et qu'aucun QR code n'est trouvé
     while (tm.time() - start_time) < timeout:
-        print(tm.time() - start_time)
-        if VideoSetting.flag and VideoSetting.frame is not None:
+        # Vérifie l'état du flux
+        if not VideoSetting.flag:
+            print("flux non démarré ?")
+            tm.sleep(0.05)
+            break
 
-            # Analyse de la frame actuelle du flux
+        if VideoSetting.frame is None:
+            print("pas de frame disponible")
+            tm.sleep(0.05)
+            break
 
-            decoded_info = decode(VideoSetting.frame, symbols=[ZBarSymbol.QRCODE])
-            print("test")
-            for qrcode in decoded_info:
-                print("test1")
-                decoded_text = qrcode.data.decode("utf-8")
-                if mat in decoded_text:
-                    print("test 2")
-                    print("QR Code correspondant détecté !")
-                    scan_result = decoded_text
-                    break
+        # Vérifie que c'est bien un numpy array
+        frame = VideoSetting.frame  # Copie locale pour éviter les race conditions
+        if not isinstance(frame, np.ndarray):
+            print(f"frame n'est pas un numpy array : {type(frame)}")
+            tm.sleep(0.05)
+            continue
 
-            if scan_result:
-                break  # On sort de la boucle while si on a trouvé
+        decoded_info = decode(frame, symbols=[ZBarSymbol.QRCODE])
 
-        # Petite pause pour ne pas saturer le CPU (ex: 20 images par seconde)
+        if not decoded_info:
+            tm.sleep(0.05)
+            continue
+
+        for qrcode in decoded_info:
+            decoded_text = qrcode.data.decode("utf-8")
+            print(f"QR détecté : {decoded_text}")
+
+            if mat in decoded_text:
+                scan_result = decoded_text
+                print("OK")
+                break
+
+        if scan_result:
+            break
+
         tm.sleep(0.05)
 
-    # Si après la boucle (timeout), rien n'a été trouvé
     if not scan_result:
-        print('Aucun QR code détecté dans le temps imparti')
         raise HTTPException(status_code=400, detail="Aucun QR code détecté")
 
-    # Reste de votre logique Base de données
     with get_db() as db:
         emp = db.query(Employe).filter(Employe.qrCode == scan_result).first()
 
@@ -119,7 +131,6 @@ def scan_qr(mat: str):
         raise HTTPException(status_code=400, detail="Employé introuvable avec ce QR code")
 
     return scan_result
-
 """def scan_qr(mat: str):
     scan_result = None
 
@@ -151,7 +162,13 @@ HEURE_LIMITE = time(8, 0)
 def pointer(
         current_user: RequestModelEmp = Depends(get_current_user),
 ):
-    # Prendre une photo et encoder
+    """
+    Fonction de pointage :
+    - Capture et vérifie la présence d'un visage
+    - Compare avec la photo de référence via le cache
+    - Met à jour le statut selon la logique métier
+    """
+    # 1. Capturer et encoder le visage
     picture_encode = None
     if take_picture(current_user.matricule):
         picture_encode = encoding(current_user.matricule)
@@ -159,22 +176,15 @@ def pointer(
     if not picture_encode:
         raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image capturée.")
 
-    # Chargement la photo de référence de l'employé
-    try:
-        user_img = face_recognition.load_image_file(current_user.photo)
-        user_encodings = face_recognition.face_encodings(user_img)
-        if not user_encodings:
-            raise HTTPException(status_code=400,
-                                detail="Aucun visage détecté dans la photo de référence.")
-        user_encode = user_encodings[0]
-    except FileNotFoundError:
-        raise HTTPException(status_code=404,
-                            detail=f"Photo de référence introuvable à {current_user.photo}.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur : {str(e)}")
+    # 2. Récupérer l'encodage de référence depuis le cache
+
+    user_encode = get_user_encoding(current_user.id, current_user.photo)
+    if user_encode is None:
+        raise HTTPException(status_code=400,
+                            detail="Aucun visage détecté dans la photo de référence.")
 
     with get_db() as db:
-        # Récupérer le pointage du jour
+        # 3. Récupérer le pointage du jour
         pointage = db.query(Pointage).filter(
             Pointage.id_user == current_user.id,
             Pointage.date_day == date.today()
@@ -184,43 +194,46 @@ def pointer(
             raise HTTPException(status_code=404,
                                 detail="Pointage non trouvé pour aujourd'hui. Contactez l'administrateur.")
 
-        # Comparer les visages
+        # 4. Comparer les visages
+
+        # La distance est entre 0 (identique) et 1 (différent)
+        # Seuil 0.5 plus strict que le 0.6 par défaut
         match_found = False
         for detected_face_encoding in picture_encode:
-            result = face_recognition.compare_faces([user_encode], detected_face_encoding)
-            if True in result:
+            distance = face_recognition.face_distance([user_encode], detected_face_encoding)
+            if distance[0] < 0.5:
                 match_found = True
                 break
 
-        # mise à jour du pointage
+        # 5. Mettre à jour le pointage
         now = datetime.now().time()
-        img_path = str(Path.cwd().parent / "backend" / "img" / current_user.matricule / "img.png")
+        img_path = str(IMG_DIR / current_user.matricule / "img.png")
 
         if match_found:
             if pointage.heure_arrive is None:
-                # pointage — arrivée
+                # 1er pointage — arrivée
                 pointage.heure_arrive = now
                 pointage.photo_pointage = img_path
 
-                if now > HEURE_LIMITE:
-                    pointage.status = ScoringState.RETARD
-                else:
-                    pointage.status = ScoringState.PRESENT_PARTIEL
+                # Retard si arrivée après 8h00
+                pointage.status = (ScoringState.RETARD
+                                   if now > HEURE_LIMITE
+                                   else ScoringState.PRESENT_PARTIEL)
             else:
-                # 2 pointage — départ
+                # 2ème pointage — départ
                 pointage.heure_depart = now
 
-                # Calcul heure de travail en minutes
+                # Calcul du temps de travail en minutes
                 arrive = datetime.combine(date.today(), pointage.heure_arrive)
                 depart = datetime.combine(date.today(), now)
                 pointage.heure_travail = int((depart - arrive).total_seconds() / 60)
 
-                if pointage.status == ScoringState.RETARD:
-                    pointage.status = ScoringState.RETARD_PRESENT
-                else:
-                    pointage.status = ScoringState.PRESENT
+                # Conserver l'info de retard sur le statut final
+                pointage.status = (ScoringState.RETARD_PRESENT
+                                   if pointage.status == ScoringState.RETARD
+                                   else ScoringState.PRESENT)
         else:
-            # Reconnaissance échouée
+            #  Reconnaissance échouée
             pointage.status = ScoringState.PENDING
 
         db.commit()
