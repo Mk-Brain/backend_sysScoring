@@ -9,6 +9,7 @@ from apscheduler.triggers import cron
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi_crons import Crons
+from fastapi.middleware.cors import CORSMiddleware
 
 from database.database import backend, get_db
 from models.employe import Employe
@@ -66,7 +67,7 @@ app = FastAPI(
     title="Système de Pointage",
     description="API pour gestion des employés et du pointage de présence",
     version="1.0.0",
-    lifespan=lifespan
+    #lifespan=lifespan
 )
 
 crons = Crons(app, state_backend=backend)
@@ -74,12 +75,12 @@ crons = Crons(app, state_backend=backend)
 # ── Crons ──
 current_date = date.today()
 
-@crons.cron(expr="18 * * * *", name="init scoring")
+#@crons.cron(expr="0 0 * * *", name="init scoring")
 def init_scoring():
     with get_db() as db:
         return init_pointage(db=db)
 
-@crons.cron(expr="54 23 * * *", name="init week stats")
+#@crons.cron(expr="14 * * * 7", name="init week stats")
 def init_week_stats():
     with get_db() as db:
         id_users = db.query(Employe.id).all()
@@ -94,7 +95,7 @@ def init_week_stats():
             )
             db.commit()
 
-@crons.cron(expr="54 23 * * *", name="init month stats")
+#@crons.cron(expr="14 * 30 * *", name="init month stats")
 def init_month_stats():
     with get_db() as db:
         id_users = db.query(Employe.id).all()
@@ -108,7 +109,7 @@ def init_month_stats():
             )
             db.commit()
 
-@crons.cron(expr="54 23 * * *", name="init year stats")
+#@crons.cron(expr="14 * 31 12 *", name="init year stats")
 def init_year_stats():
     with get_db() as db:
         id_users = db.query(Employe.id).all()
@@ -121,7 +122,7 @@ def init_year_stats():
             )
             db.commit()
 
-@crons.cron(expr="54 23 * * *", name="update statistiques")
+#@crons.cron(expr="*/2 * * * *", name="update statistiques")
 def lancer_mise_a_jour_statistiques():
     with get_db() as db:
         try:
@@ -129,12 +130,26 @@ def lancer_mise_a_jour_statistiques():
         finally:
             db.close()
 
-@crons.cron(expr="0 0 * * *", name="clear cache")
+#@crons.cron(expr="0 0 * * *", name="clear cache")
 def clear_():
     """Vidage du cache à minuit"""
     clear_cache()
 
 
+
+
+origins = [
+    "http://localhost:5173",
+    "http://localhost",
+    "http://localhost:8080",
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # ── Routes ──
 app.include_router(employe_router)
 app.include_router(pointage_router)

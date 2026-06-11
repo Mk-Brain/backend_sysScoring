@@ -28,7 +28,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 """Récupérer toutes les demandes"""
-@router.get("/", response_model=list[ResponseRequest])
+@router.get("/demandes", response_model=list[ResponseRequest])
 def get_all_(current_user: RequestModelEmp = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=400, detail="we can not access from this route")

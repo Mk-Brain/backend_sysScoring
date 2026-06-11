@@ -23,7 +23,7 @@ class ResponseModelEmp(BaseModel):
     sexe : str
     telephone : str
     photo : str
-    qrCode : str = "employe"
+    qrCode : str
     role: str
     email : str
     poste : str

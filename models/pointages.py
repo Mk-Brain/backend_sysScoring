@@ -2,6 +2,7 @@ import enum
 from datetime import date
 
 from sqlalchemy import Column, Date, ForeignKey, Integer, String, Time, Enum
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
 from database.database import Base
@@ -39,3 +40,10 @@ class Pointage(Base):
     )
 
     users = relationship("Employe", back_populates="pointages")
+
+    # Le raccourci magique pour Pydantic
+    @hybrid_property
+    def nom(self) -> str:
+        if self.users:
+            return self.users.nom
+        return "Inconnu"

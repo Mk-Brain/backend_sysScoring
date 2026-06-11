@@ -8,7 +8,7 @@ class ModelResponseStats(BaseModel):
     type_periode:  str | None = None
     date_debut:  date | None = None
     date_fin:  date | None = None
-    nb_pesence:  int | None = None
+    nb_presence:  int | None = None
     nb_absence:  int | None = None
     nb_retard:  int | None = None
     total_minutes_travail:  int | None = None
