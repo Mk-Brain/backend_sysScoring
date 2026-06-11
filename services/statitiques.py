@@ -11,7 +11,7 @@ DUREE_NORMALE = 8 * 60
 
 def init_stats_month(db,employe_id, date_debut,date_fin):
         stat = Statistique(
-            type_periode="mensuel",
+            type_periode="month",
             date_debut=date_debut,
             date_fin=date_fin,
             nb_presence=0,
@@ -29,7 +29,7 @@ def init_stats_month(db,employe_id, date_debut,date_fin):
 
 def init_stats_year(db,employe_id,date_debut,date_fin):
         stat = Statistique(
-            type_periode="annuel",
+            type_periode="year",
             date_debut=date_debut,
             date_fin=date_fin,
             nb_presence=0,
@@ -47,7 +47,7 @@ def init_stats_year(db,employe_id,date_debut,date_fin):
 
 def init_stats_week(db,employe_id,date_debut,date_fin):
         stat = Statistique(
-            type_periode="hebdomadaire",
+            type_periode="week",
             date_debut=date_debut,
             date_fin=date_fin,
             nb_presence=0,
@@ -121,9 +121,9 @@ def mettre_a_jour_toutes_les_statistiques(
 ):
 
     types = [
-        "hebdomadaire",
-        "mensuel",
-        "annuel"
+        "week",
+        "month",
+        "year"
     ]
     #appliquer la mise à jour pour chaque periode
     for type_periode in types:

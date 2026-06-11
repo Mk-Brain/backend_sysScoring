@@ -20,7 +20,8 @@ from pyzbar.pyzbar import decode
 
 from utils.global_var import VideoSetting
 
-from datetime import date, datetime, time# Ajout de datetime, time pour calculer_minutes_travail si besoin ailleurs
+from datetime import date, datetime, time, \
+    timedelta  # Ajout de datetime, time pour calculer_minutes_travail si besoin ailleurs
 
 import time as  tm
 import face_recognition
@@ -79,8 +80,8 @@ def scan_qr(mat: str):
     scan_result = None
     timeout = 10
     start_time = tm.time()
-
-    print("Début du scan QR code...")
+    today = date.today().strftime("%d/%m/%Y")
+    print(f"Début du scan QR code... {today}")
 
     while (tm.time() - start_time) < timeout:
         # Vérifie l'état du flux
@@ -111,7 +112,7 @@ def scan_qr(mat: str):
             decoded_text = qrcode.data.decode("utf-8")
             print(f"QR détecté : {decoded_text}")
 
-            if mat in decoded_text:
+            if mat in decoded_text and today in decoded_text:
                 scan_result = decoded_text
                 print("OK")
                 break
@@ -124,8 +125,10 @@ def scan_qr(mat: str):
     if not scan_result:
         raise HTTPException(status_code=400, detail="Aucun QR code détecté")
 
+    qr = str(scan_result).split("|")[0]
+    print(qr)
     with get_db() as db:
-        emp = db.query(Employe).filter(Employe.qrCode == scan_result).first()
+        emp = db.query(Employe).filter(Employe.qrCode == qr).first()
 
     if not emp:
         raise HTTPException(status_code=400, detail="Employé introuvable avec ce QR code")
@@ -165,7 +168,7 @@ def pointer(
     """
     Fonction de pointage :
     - Capture et vérifie la présence d'un visage
-    - Compare avec la photo de référence via le cache
+    - Compare avec la photo de référence via le cachess
     - Met à jour le statut selon la logique métier
     """
     # 1. Capturer et encoder le visage
@@ -207,6 +210,7 @@ def pointer(
 
         # 5. Mettre à jour le pointage
         now = datetime.now().time()
+        limite = datetime.now() + timedelta(minutes=5)
         img_path = str(IMG_DIR / current_user.matricule / "img.png")
 
         if match_found:
@@ -221,17 +225,18 @@ def pointer(
                                    else ScoringState.PRESENT_PARTIEL)
             else:
                 # 2ème pointage — départ
-                pointage.heure_depart = now
+                if pointage.heure_depart is None and now > limite.time() :
+                    pointage.heure_depart = now
 
-                # Calcul du temps de travail en minutes
-                arrive = datetime.combine(date.today(), pointage.heure_arrive)
-                depart = datetime.combine(date.today(), now)
-                pointage.heure_travail = int((depart - arrive).total_seconds() / 60)
+                    # Calcul du temps de travail en minutes
+                    arrive = datetime.combine(date.today(), pointage.heure_arrive)
+                    depart = datetime.combine(date.today(), now)
+                    pointage.heure_travail = int((depart - arrive).total_seconds() / 60)
 
-                # Conserver l'info de retard sur le statut final
-                pointage.status = (ScoringState.RETARD_PRESENT
-                                   if pointage.status == ScoringState.RETARD
-                                   else ScoringState.PRESENT)
+                    # Conserver l'info de retard sur le statut final
+                    pointage.status = (ScoringState.RETARD_PRESENT
+                                       if pointage.status == ScoringState.RETARD
+                                       else ScoringState.PRESENT)
         else:
             #  Reconnaissance échouée
             pointage.status = ScoringState.PENDING

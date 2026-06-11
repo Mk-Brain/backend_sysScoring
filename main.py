@@ -74,12 +74,12 @@ crons = Crons(app, state_backend=backend)
 # ── Crons ──
 current_date = date.today()
 
-@crons.cron(expr="18 * * * *", name="init scoring")
+@crons.cron(expr="0 0 * * *", name="init scoring")
 def init_scoring():
     with get_db() as db:
         return init_pointage(db=db)
 
-@crons.cron(expr="54 23 * * *", name="init week stats")
+@crons.cron(expr="14 * * * 7", name="init week stats")
 def init_week_stats():
     with get_db() as db:
         id_users = db.query(Employe.id).all()
@@ -94,7 +94,7 @@ def init_week_stats():
             )
             db.commit()
 
-@crons.cron(expr="54 23 * * *", name="init month stats")
+@crons.cron(expr="14 * 30 * *", name="init month stats")
 def init_month_stats():
     with get_db() as db:
         id_users = db.query(Employe.id).all()
@@ -108,7 +108,7 @@ def init_month_stats():
             )
             db.commit()
 
-@crons.cron(expr="54 23 * * *", name="init year stats")
+@crons.cron(expr="14 * 31 12 *", name="init year stats")
 def init_year_stats():
     with get_db() as db:
         id_users = db.query(Employe.id).all()
@@ -121,7 +121,7 @@ def init_year_stats():
             )
             db.commit()
 
-@crons.cron(expr="54 23 * * *", name="update statistiques")
+@crons.cron(expr="*/2 * * * *", name="update statistiques")
 def lancer_mise_a_jour_statistiques():
     with get_db() as db:
         try:
