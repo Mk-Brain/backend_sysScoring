@@ -1,7 +1,11 @@
+import asyncio
+import json
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
-from services.auth import get_current_user, get_password_hash, get_user_by_email
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.sse import EventSourceResponse
+
+from services.auth import get_current_user, get_password_hash, get_user_by_email, verify_access_token
 from database.database import  get_db
 from models.demandes import DemandesInscription
 from models.employe import Employe
@@ -17,15 +21,39 @@ router = APIRouter(
 )
 
 
+async def prodige_donnees(token: str):
+    while True:
+        # ✅ Vérifier le token à chaque itération
+        user = verify_access_token(token)
+
+        if user is None:
+            # ✅ Envoyer un événement spécial au lieu de crasher
+            yield f"event: token_expired\ndata: {{}}\n\n"
+            break  # Arrêter le générateur
+
+        with get_db() as db:
+            donnees = db.query(Employe).all()
+            payload = [
+                ResponseModelEmp.model_validate(d).model_dump(mode="json")
+                for d in donnees
+            ]
+
+        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        await asyncio.sleep(2)
 
 """Récupérer tous les employés"""
-@router.get("/", response_model=List[ResponseModelEmp])
-def get_all_employes(user: RequestModelEmp = Depends(get_current_user)) :
+@router.get("/users")
+async def get_all_stream_user(token: str = Query(...)):
+    user = verify_access_token(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Token invalide")
     if user.role != "admin":
-        raise HTTPException(status_code=400, detail="vous ne pouvez pas acceder à cette route")
-    with get_db() as db:
-        employes = db.query(Employe).all()
-    return employes
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+    return EventSourceResponse(prodige_donnees(token))
+
+
+
 
 
 "recuperer l'utilisateur connecté"

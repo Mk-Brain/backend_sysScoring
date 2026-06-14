@@ -1,12 +1,16 @@
+import asyncio
+import json
 import os
 from pathlib import Path
+from typing import AsyncIterable
 
-from fastapi import HTTPException, Form
+from fastapi import HTTPException, Form, Query
 
 from fastapi import APIRouter, Depends
+from fastapi.encoders import jsonable_encoder
+from fastapi.sse import EventSourceResponse
 
-
-from services.auth import get_current_user
+from services.auth import get_current_user, verify_access_token
 from database.database import  get_db
 
 from models.demandes import DemandesInscription
@@ -28,7 +32,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 """Récupérer toutes les demandes"""
-@router.get("/demandes", response_model=list[ResponseRequest])
+"""@router.get("/demandes", response_model=list[ResponseRequest])
 def get_all_(current_user: RequestModelEmp = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=400, detail="we can not access from this route")
@@ -36,8 +40,43 @@ def get_all_(current_user: RequestModelEmp = Depends(get_current_user)):
         demandes = db.query(DemandesInscription).all()
     if not demandes:
         return {"message": "Aucune demande d'inscrition"}
-    return  demandes
+    return  demandes"""
 
+
+
+import asyncio, json
+
+
+async def prodige_donnees(token: str):
+    while True:
+        # ✅ Vérifier le token à chaque itération
+        user = verify_access_token(token)
+
+        if user is None:
+            # ✅ Envoyer un événement spécial au lieu de crasher
+            yield f"event: token_expired\ndata: {{}}\n\n"
+            break  # Arrêter le générateur
+
+        with get_db() as db:
+            donnees = db.query(DemandesInscription).all()
+            payload = [
+                ResponseRequest.model_validate(d).model_dump(mode="json")
+                for d in donnees
+            ]
+
+        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        await asyncio.sleep(2)
+
+
+@router.get("/demandes")
+async def get_all_stream_req(token: str = Query(...)):
+    user = verify_access_token(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Token invalide")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+    return EventSourceResponse(prodige_donnees(token))
 
 """effectuer une demande d'inscription"""
 @router.post("/inscription", response_model=ResponseRequest)
@@ -109,12 +148,7 @@ async def update_inscrition(
         db.refresh(dmd)
     return  dmd
 
-"""recuperer une demande"""
-@router.get("/get_request", response_model=ResponseRequest)
-def get_request(id_request: int):
-    with get_db() as db:
-        dmd = db.query(DemandesInscription).get(id_request)
-    return dmd
+
 
 """changer le status d'une demande"""
 @router.put("/change_status", response_model=ResponseChangeStatus)

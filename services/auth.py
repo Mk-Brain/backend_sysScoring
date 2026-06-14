@@ -120,3 +120,21 @@ def verify_token(refresh_token: str, user_refresh_token: str):
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     return user
+
+def verify_access_token(token):
+    try:
+        payload = jwt.decode(token, key, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+
+        if email is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    with get_db() as db:
+        user = get_user_by_email(email, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    return user

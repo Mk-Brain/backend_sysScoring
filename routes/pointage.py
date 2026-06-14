@@ -1,14 +1,16 @@
+import asyncio
+import json
 from pathlib import Path
 
 import numpy as np
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 import cv2
-
+from fastapi.sse import EventSourceResponse
 
 from pyzbar.wrapper import ZBarSymbol
 from sqlalchemy.orm import joinedload
 
-from services.auth import get_current_user
+from services.auth import get_current_user, verify_access_token
 from database.database import get_db
 from models.employe import Employe
 from models.pointages import Pointage, ScoringState
@@ -34,16 +36,39 @@ router = APIRouter(
 )
 
 
+async def prodige_donnees(token: str):
+    while True:
+        # ✅ Vérifier le token à chaque itération
+        user = verify_access_token(token)
+
+        if user is None:
+            # ✅ Envoyer un événement spécial au lieu de crasher
+            yield f"event: token_expired\ndata: {{}}\n\n"
+            break  # Arrêter le générateur
+
+        with get_db() as db:
+            donnees = db.query(Pointage).options(joinedload(Pointage.users)).all()
+            payload = [
+                ModelScoring.model_validate(d).model_dump(mode="json")
+                for d in donnees
+            ]
+
+        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        await asyncio.sleep(2)
+
 """Récupérer tous les pointages"""
-@router.get("/", response_model=list[ModelScoring])
-def get_all_pointages(current_user: RequestModelEmp | None = Depends(get_current_user)):
-    if not current_user or current_user.role != "admin":
-        raise HTTPException(status_code=401, detail="Unauthorized access")
-    with get_db() as db:
-        pointages = db.query(Pointage).options(joinedload(Pointage.users)).all()
-        if not pointages:
-            return []
-        return pointages
+@router.get("/pointages")
+async def get_all_stream_req(token: str = Query(...)):
+    user = verify_access_token(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Token invalide")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+    return EventSourceResponse(prodige_donnees(token))
+
+
+
 
 """Récupérer tous les pointages d'un user specifique"""
 @router.get("/my_scoring", response_model=list[ModelScoring])
