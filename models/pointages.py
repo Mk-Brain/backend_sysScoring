@@ -25,7 +25,11 @@ class Pointage(Base):
     heure_arrive = Column(Time, nullable=True)
     heure_depart = Column(Time, nullable=True)
 
-    heure_travail = Column(Integer, default=0)
+    minutes_travail = Column(Integer, default=0)
+
+    minutes_sup = Column(Integer, default=0)
+
+    etat_pointage = Column(Integer, default=0, nullable=False)
 
     status = Column(
         Enum(ScoringState),
@@ -46,4 +50,10 @@ class Pointage(Base):
     def nom(self) -> str:
         if self.users:
             return self.users.nom
+        return "Inconnu"
+    
+    @hybrid_property
+    def photo_user(self) -> str:
+        if self.users:
+            return self.users.photo
         return "Inconnu"

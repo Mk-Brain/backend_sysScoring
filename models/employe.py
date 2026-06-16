@@ -18,6 +18,7 @@ class Employe(Base):
     password = Column(String(255), nullable=False)
     poste = Column(String(50))
     qrCode = Column(String(255), nullable=False, unique=True)
+    status = Column(Enum("actif", "inactif"), default="actif")
     role = Column(Enum('admin', 'employe'), default='employe', nullable=False)
 
     # Relations

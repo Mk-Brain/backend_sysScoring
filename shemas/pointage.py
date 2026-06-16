@@ -9,7 +9,11 @@ class ModelScoring(BaseModel):
     heure_depart: time | None = None
     status: str
     photo_pointage: str
+    photo_user: str
     id_user: int
 
     class Config:
         from_attributes = True
+
+class ChangeStatusPointageRequest(BaseModel):
+    status: str

@@ -11,24 +11,25 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.sse import EventSourceResponse
 
 from services.auth import get_current_user, verify_access_token
-from database.database import  get_db
+from database.database import get_db
 
 from models.demandes import DemandesInscription
 
 from sqlalchemy import exists, select
 
 from services.demande import verify_picture
-from shemas.demande import ResponseRequest, ModelRequest, ResponseChangeStatus, ModelUpdateRequest
+from shemas.demande import (
+    ResponseRequest,
+    ModelRequest,
+    ResponseChangeStatus,
+    ModelUpdateRequest,
+)
 from shemas.employe import RequestModelEmp
 
-router = APIRouter(
-    prefix="/demande",
-    tags=["demande"]
-)
+router = APIRouter(prefix="/demande", tags=["demande"])
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 
 
 """Récupérer toutes les demandes"""
@@ -41,7 +42,6 @@ def get_all_(current_user: RequestModelEmp = Depends(get_current_user)):
     if not demandes:
         return {"message": "Aucune demande d'inscrition"}
     return  demandes"""
-
 
 
 import asyncio, json
@@ -78,10 +78,13 @@ async def get_all_stream_req(token: str = Query(...)):
 
     return EventSourceResponse(prodige_donnees(token))
 
+
 """effectuer une demande d'inscription"""
+
+
 @router.post("/inscription", response_model=ResponseRequest)
-async def new_inscrition(dem:ModelRequest = Form(media_type="multipart/form-data")):
-    #verification de l'extension
+async def new_inscrition(dem: ModelRequest = Form(media_type="multipart/form-data")):
+    # verification de l'extension
     await verify_picture(dem.photo)
     await dem.photo.seek(0)
 
@@ -91,8 +94,8 @@ async def new_inscrition(dem:ModelRequest = Form(media_type="multipart/form-data
         f.write(content)
     demande = DemandesInscription(
         nom=dem.nom,
-        prenom= dem.prenom,
-        sexe= dem.sexe,
+        prenom=dem.prenom,
+        sexe=dem.sexe,
         matricule=dem.matricule,
         email=dem.email,
         telephone=dem.telephone,
@@ -101,7 +104,9 @@ async def new_inscrition(dem:ModelRequest = Form(media_type="multipart/form-data
         poste=dem.poste,
     )
     with get_db() as db:
-        get_exist_dmd = select(exists().where(DemandesInscription.matricule == dem.matricule))
+        get_exist_dmd = select(
+            exists().where(DemandesInscription.matricule == dem.matricule)
+        )
         flag = db.scalar(get_exist_dmd)
         if not flag:
             db.add(demande)
@@ -109,11 +114,14 @@ async def new_inscrition(dem:ModelRequest = Form(media_type="multipart/form-data
             db.refresh(demande)
     return demande
 
+
 """modifier une demande d'inscription"""
+
+
 @router.put("/change_inscription", response_model=ResponseRequest)
 async def update_inscrition(
-    dem:ModelUpdateRequest = Form(media_type="multipart/form-data")
-    ):
+    dem: ModelUpdateRequest = Form(media_type="multipart/form-data"),
+):
     global images_location
     if dem.photo:
         await verify_picture(dem.photo)
@@ -124,7 +132,11 @@ async def update_inscrition(
             f.write(content)
     dmd = DemandesInscription()
     with get_db() as db:
-        dmd = db.query(DemandesInscription).filter(DemandesInscription.id == int(dem.id_req)).first()
+        dmd = (
+            db.query(DemandesInscription)
+            .filter(DemandesInscription.id == int(dem.id_req))
+            .first()
+        )
         dmd.status = "pending"
         if dem.nom:
             dmd.nom = dem.nom
@@ -146,13 +158,19 @@ async def update_inscrition(
             dmd.poste = dem.poste
         db.commit()
         db.refresh(dmd)
-    return  dmd
-
+    return dmd
 
 
 """changer le status d'une demande"""
+
+
 @router.put("/change_status", response_model=ResponseChangeStatus)
-def change_status(id: int, status: str, comments: str | None = None, current_user: RequestModelEmp = Depends(get_current_user)) :
+def change_status(
+    id: int,
+    status: str,
+    comments: str | None = None,
+    current_user: RequestModelEmp = Depends(get_current_user),
+):
     if current_user.role != "admin":
         raise HTTPException(status_code=400, detail="we can not access from this route")
     demande = DemandesInscription()
@@ -165,6 +183,27 @@ def change_status(id: int, status: str, comments: str | None = None, current_use
             demande.comments = comments
         db.commit()
         db.refresh(demande)
-    return  demande
+    return demande
 
 
+@router.delete(
+    "/{id}",
+)
+def delete_request(id: int, current_user: RequestModelEmp = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403, detail="You can not access from this route"
+        )
+
+    with get_db() as db:
+        demande = (
+            db.query(DemandesInscription).filter(DemandesInscription.id == id).first()
+        )
+
+        if not demande:
+            raise HTTPException(status_code=404, detail="Demande not found")
+
+        db.delete(demande)
+        db.commit()
+
+    return {"message": "Demande supprimée avec succès"}

@@ -17,7 +17,7 @@ from models.pointages import Pointage, ScoringState
 from services.employe import get_user_encoding
 from services.pointage import take_picture, encoding, IMG_DIR
 from shemas.employe import RequestModelEmp
-from shemas.pointage import ModelScoring
+from shemas.pointage import ChangeStatusPointageRequest, ModelScoring
 from pyzbar.pyzbar import decode
 
 from utils.global_var import VideoSetting
@@ -38,11 +38,11 @@ router = APIRouter(
 
 async def prodige_donnees(token: str):
     while True:
-        # ✅ Vérifier le token à chaque itération
+        # Vérifier le token à chaque itération
         user = verify_access_token(token)
 
         if user is None:
-            # ✅ Envoyer un événement spécial au lieu de crasher
+            #  Envoyer un événement spécial au lieu de crasher
             yield f"event: token_expired\ndata: {{}}\n\n"
             break  # Arrêter le générateur
 
@@ -83,19 +83,25 @@ def get_all_pointages(current_user: RequestModelEmp | None = Depends(get_current
 
 
 """Changer le status d'un pointages"""
-@router.put("/modify_scoring", response_model=ModelScoring)
-def chang_status(id: int, status: str, current_user: RequestModelEmp | None = Depends(get_current_user)):
-    if current_user and current_user.role != "admin":
-        raise HTTPException(status_code=400, detail="we can not access from this route")
-    to_update = Pointage()
+@router.put("/{id}/change_status")
+def change_pointage_status(
+    id: int,
+    body: ChangeStatusPointageRequest,
+    current_user: RequestModelEmp = Depends(get_current_user)
+):
+    print(f"<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<{id}")
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="You can not access from this route")
+
     with get_db() as db:
-        to_update = db.query(Pointage).get(id)
-        if not to_update:
-            raise HTTPException(status_code=400, detail="scoring not found")
-        to_update.status = status
+        pointage = db.query(Pointage).filter(Pointage.id == id).first()
+        if not pointage:
+            raise HTTPException(status_code=404, detail="Pointage not found")
+
+        pointage.status = body.status
         db.commit()
-        db.refresh(to_update)
-    return to_update
+
+    return {"message": "Statut du pointage mis à jour"}
 
 
 
@@ -270,3 +276,24 @@ def pointer(
         db.refresh(pointage)
 
     return match_found
+
+
+
+@router.delete("/delete/{id}")
+def delete_pointage(
+    id: int,
+    current_user: RequestModelEmp = Depends(get_current_user)
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="You can not access from this route")
+
+    with get_db() as db:
+        pointage = db.query(Pointage).filter(Pointage.id == id).first()
+
+        if not pointage:
+            raise HTTPException(status_code=404, detail="Pointage not found")
+
+        db.delete(pointage)
+        db.commit()
+
+    return {"message": "Pointage supprimé avec succès"}
