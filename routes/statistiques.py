@@ -1,12 +1,13 @@
 import asyncio
 import json
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 import calendar
-from sqlalchemy import func
-
+from sqlalchemy import func, or_, case
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.sse import EventSourceResponse
+
+from sqlalchemy.orm import joinedload
 
 from services.auth import get_current_user, verify_access_token
 from database.database import get_db
@@ -16,6 +17,7 @@ from models.employe import Employe
 from models.demandes import DemandesInscription
 from shemas.employe import RequestModelEmp
 from shemas.statistiques import ModelResponseStats
+from utils.global_var import SettingApp
 
 router = APIRouter(
     prefix="/statistiques",
@@ -23,8 +25,6 @@ router = APIRouter(
 )
 
 "recuperer toutes le données de statistiques des employés"
-
-
 @router.get("/", response_model=list[ModelResponseStats])
 def get_statistiques(current_user: RequestModelEmp = Depends(get_current_user)):
     if current_user.role != "admin":
@@ -35,8 +35,6 @@ def get_statistiques(current_user: RequestModelEmp = Depends(get_current_user)):
 
 
 "récuperer les statistiques d'de l'utilisateur connecter"
-
-
 @router.get("/my_stats", response_model=list[ModelResponseStats])
 def get_statistiques(current_user: RequestModelEmp = Depends(get_current_user)):
 
@@ -47,6 +45,12 @@ def get_statistiques(current_user: RequestModelEmp = Depends(get_current_user)):
     return stats
 
 
+
+
+
+
+
+"""fornisseur de données pour le dashbord"""
 async def prodige_donnees_dashbord(token: str):
     while True:
         # Vérifier le token à chaque itération
@@ -87,91 +91,73 @@ async def prodige_donnees_dashbord(token: str):
             presents_today = sum(
                 1
                 for p in pointages_today
-                if p.status
+                if p.status_arrivee
                 in [
                     ScoringState.PRESENT,
-                    ScoringState.RETARD_PRESENT,
-                    ScoringState.PRESENT_PARTIEL,
+
                 ]
             )
+            
             retards_today = sum(
                 1
                 for p in pointages_today
-                if p.status in [ScoringState.RETARD, ScoringState.RETARD_PRESENT]
+                if p.status_arrivee in [ScoringState.RETARD]
             )
+            
             absents_today = sum(
-                1 for p in pointages_today if p.status == ScoringState.ABSENT
+                1 for p in pointages_today if p.status_arrivee == ScoringState.ABSENT
             )
+
             pointages_refuses_today = sum(
-                1 for p in pointages_today if p.status == ScoringState.PENDING
+                1 for p in pointages_today if p.status_arrivee == ScoringState.PENDING
             )
 
             # Compteurs d'hier
             presents_yesterday = sum(
                 1
                 for p in pointages_yesterday
-                if p.status
+                if p.status_arrivee
                 in [
                     ScoringState.PRESENT,
-                    ScoringState.RETARD_PRESENT,
-                    ScoringState.PRESENT_PARTIEL,
+                  
                 ]
             )
+            
             retards_yesterday = sum(
                 1
                 for p in pointages_yesterday
-                if p.status in [ScoringState.RETARD, ScoringState.RETARD_PRESENT]
+                if p.status_arrivee in [ScoringState.RETARD]
             )
+            
             absents_yesterday = sum(
-                1 for p in pointages_yesterday if p.status == ScoringState.ABSENT
+                1 for p in pointages_yesterday if p.status_arrivee == ScoringState.ABSENT
             )
             pointages_refuses_yesterday = sum(
-                1 for p in pointages_yesterday if p.status == ScoringState.PENDING
+                1 for p in pointages_yesterday if p.status_arrivee == ScoringState.PENDING
             )
 
             # ===== 2. ÉVOLUTIONS DE LA SEMAINE (7 JOURS) =====
             # GROSSE OPTIMISATION : Ta boucle d'origine exécutait 21 requêtes SQL (3 requêtes × 7 jours).
             # On réduit ça à UNE SEULE requête d'agrégation groupée par jour.
             week_end = week_start + timedelta(days=6)
+            
             stats_week_brute = (
                 db.query(
                     Pointage.date_day,
                     func.sum(
-                        func.case(
-                            whens=[
-                                (
-                                    Pointage.status.in_(
-                                        [
-                                            ScoringState.PRESENT,
-                                            ScoringState.RETARD_PRESENT,
-                                            ScoringState.PRESENT_PARTIEL,
-                                        ]
-                                    ),
-                                    1,
-                                )
-                            ],
+                        case(
+                                (Pointage.status_arrivee.in_([ScoringState.PRESENT]),1,),
                             else_=0,
                         )
                     ).label("presents"),
                     func.sum(
-                        func.case(
-                            whens=[(Pointage.status == ScoringState.ABSENT, 1)], else_=0
+                        case(
+                            (Pointage.status_arrivee == ScoringState.ABSENT, 1), else_=0
                         )
                     ).label("absents"),
                     func.sum(
-                        func.case(
-                            whens=[
-                                (
-                                    Pointage.status.in_(
-                                        [
-                                            ScoringState.RETARD,
-                                            ScoringState.RETARD_PRESENT,
-                                        ]
-                                    ),
-                                    1,
-                                )
-                            ],
-                            else_=0,
+                        case(
+                                (Pointage.status_arrivee.in_([ScoringState.RETARD,]),1,),else_=0,
                         )
                     ).label("retards"),
                 )
@@ -200,36 +186,37 @@ async def prodige_donnees_dashbord(token: str):
                 )
                 evolution_absences.append(
                     {
-                        "jour": jours[i],
-                        "valeur": int(day_data.absents or 0) if day_data else 0,
+                        "day": jours[i],
+                        "value": int(day_data.absents or 0) if day_data else 0,
                     }
                 )
                 evolution_retards.append(
                     {
-                        "jour": jours[i],
-                        "valeur": int(day_data.retards or 0) if day_data else 0,
+                        "day": jours[i],
+                        "value": int(day_data.retards or 0) if day_data else 0,
                     }
                 )
 
             # ===== 3. LISTES ET SELECTIONS (Top 5, Recents, Absents) =====
             # Correction de la faille N+1 : Ajout de joinedload pour éviter que Python interroge la table User à chaque itération
-            from sqlalchemy.orm import joinedload
+            
 
             cinq_derniers = (
                 db.query(Pointage)
                 .options(joinedload(Pointage.users))
                 .filter(Pointage.date_day == today)
-                .order_by(Pointage.id.desc())
+                .order_by(Pointage.heure_arrive.desc())
                 .limit(5)
                 .all()
             )
+           
             cinq_derniers_pointages = [
                 {
                     "nom": p.users.nom if p.users else "Inconnu",
                     "prenom": p.users.prenom if p.users else "",
                     "poste": p.users.poste if p.users and p.users.poste else "",
                     "heure": str(p.heure_arrive) if p.heure_arrive else "",
-                    "status": p.status.value if p.status else "",
+                    "status": p.status_arrivee.value if p.status_arrivee else "",
                 }
                 for p in cinq_derniers
             ]
@@ -245,8 +232,8 @@ async def prodige_donnees_dashbord(token: str):
                 .filter(
                     Pointage.date_day >= week_start,
                     Pointage.date_day <= today,
-                    Pointage.status.in_(
-                        [ScoringState.RETARD, ScoringState.RETARD_PRESENT]
+                    Pointage.status_arrivee.in_(
+                        [ScoringState.RETARD]
                     ),
                 )
                 .group_by(Employe.id)
@@ -254,6 +241,7 @@ async def prodige_donnees_dashbord(token: str):
                 .limit(5)
                 .all()
             )
+            
             top_cinq_retards_semaine = [
                 {"nom": r[0], "prenom": r[1], "nb_retard": r[2]} for r in retards_week
             ]
@@ -263,10 +251,11 @@ async def prodige_donnees_dashbord(token: str):
                 db.query(Pointage)
                 .options(joinedload(Pointage.users))
                 .filter(
-                    Pointage.date_day == today, Pointage.status == ScoringState.ABSENT
+                    Pointage.date_day == today, Pointage.status_arrivee == ScoringState.ABSENT
                 )
                 .all()
             )
+            
             absents_du_jour = [
                 {
                     "nom": p.users.nom if p.users else "Inconnu",
@@ -282,10 +271,15 @@ async def prodige_donnees_dashbord(token: str):
                 .filter(DemandesInscription.status == "pending")
                 .count()
             )
+           
             pointages_invalides = (
                 db.query(Pointage)
                 .filter(
-                    Pointage.date_day == today, Pointage.status == ScoringState.PENDING
+                    Pointage.date_day == today,
+                    or_(
+                        Pointage.status_arrivee == ScoringState.PENDING,
+                        Pointage.status_depart == ScoringState.PENDING
+                    )
                 )
                 .count()
             )
@@ -302,20 +296,18 @@ async def prodige_donnees_dashbord(token: str):
             presents_month = sum(
                 1
                 for p in month_pointages
-                if p.status
+                if p.status_arrivee
                 in [
                     ScoringState.PRESENT,
-                    ScoringState.RETARD_PRESENT,
-                    ScoringState.PRESENT_PARTIEL,
                 ]
             )
-            presence_actuel = (
-                (presents_month / len(month_pointages) * 100) if month_pointages else 0
-            )
+
+            presence_actuel = round(presents_month / len(month_pointages) * 100, 2) if month_pointages else 0
 
             # Mois précédent
             last_month_end = month_start - timedelta(days=1)
             last_month_start = last_month_end.replace(day=1)
+            
             month_precedent_pointages = (
                 db.query(Pointage)
                 .filter(
@@ -328,13 +320,12 @@ async def prodige_donnees_dashbord(token: str):
             presents_last_month = sum(
                 1
                 for p in month_precedent_pointages
-                if p.status
+                if p.status_arrivee
                 in [
                     ScoringState.PRESENT,
-                    ScoringState.RETARD_PRESENT,
-                    ScoringState.PRESENT_PARTIEL,
                 ]
             )
+            
             presence_precedent = (
                 (presents_last_month / len(month_precedent_pointages) * 100)
                 if month_precedent_pointages
@@ -379,12 +370,11 @@ async def prodige_donnees_dashbord(token: str):
             }
 
         yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(2)
+        await asyncio.sleep(5)
+
 
 
 """Récupérer tous les pointages"""
-
-
 @router.get("/dashbord")
 async def get_all_stream_req(token: str = Query(...)):
     user = verify_access_token(token)
@@ -395,10 +385,14 @@ async def get_all_stream_req(token: str = Query(...)):
 
     return EventSourceResponse(prodige_donnees_dashbord(token))
 
-
+"""fornisseur de données pour le rapport"""
 async def prodige_donnees_rapport(
     token: str, periode: str, date_deb: date, date_fin: date
 ):
+    # LOGIQUE HYBRIDE : Étape 1 - Calcul du total théorique d'heures
+    is_standard_periode = periode in ["hebdomadaire", "mensuelle", "annuel"]
+
+    nb_jours = nb_jours_ouvrables(date_deb, date_fin)
     while True:
         # Vérifier le token à chaque itération
         user = verify_access_token(token)
@@ -420,41 +414,22 @@ async def prodige_donnees_rapport(
             }
 
             # ===== RESUME GLOBAL =====
-            #  Correction : Le filtre d'origine était inversé (<= deb et >= fin)
-            pointages_periode = (
-                db.query(Pointage)
-                .filter(Pointage.date_day >= date_deb, Pointage.date_day <= date_fin)
-                .all()
-            )
+            result = db.query(
+                func.sum(case((Pointage.status_arrivee == ScoringState.PRESENT, 1), else_=0)),
+                func.sum(case((Pointage.status_arrivee == ScoringState.RETARD, 1), else_=0)),
+                func.sum(case((Pointage.status_arrivee == ScoringState.ABSENT, 1), else_=0)),
+                func.count(Pointage.id)
+            ).filter(Pointage.date_day >= date_deb, Pointage.date_day <= date_fin).first()
 
-            presents = sum(
-                1
-                for p in pointages_periode
-                if p.status
-                in [
-                    ScoringState.PRESENT,
-                    ScoringState.RETARD_PRESENT,
-                    ScoringState.PRESENT_PARTIEL,
-                ]
-            )
-            retards = sum(
-                1
-                for p in pointages_periode
-                if p.status in [ScoringState.RETARD, ScoringState.RETARD_PRESENT]
-            )
-            absents = sum(
-                1 for p in pointages_periode if p.status == ScoringState.ABSENT
-            )
+            presents, retards, absents, total_count = result
+            taux_presence = (presents / total_count * 100) if total_count else 0
 
-            taux_presence = (
-                (presents / len(pointages_periode) * 100) if pointages_periode else 0
-            )
 
             resume_global = {
                 "presences": presents,
                 "absences": absents,
                 "retards": retards,
-                "taux_presence_global": taux_presence,
+                "taux_presence_global": round(taux_presence, 2),
             }
 
             # ===== TOP 10 RETARDS =====
@@ -469,8 +444,8 @@ async def prodige_donnees_rapport(
                 .filter(
                     Pointage.date_day >= date_deb,
                     Pointage.date_day <= date_fin,
-                    Pointage.status.in_(
-                        [ScoringState.RETARD, ScoringState.RETARD_PRESENT]
+                    Pointage.status_arrivee.in_(
+                        [ScoringState.RETARD]
                     ),
                 )
                 .group_by(Employe.id)
@@ -495,7 +470,7 @@ async def prodige_donnees_rapport(
                 .filter(
                     Pointage.date_day >= date_deb,
                     Pointage.date_day <= date_fin,
-                    Pointage.status == ScoringState.ABSENT,
+                    Pointage.status_arrivee == ScoringState.ABSENT,
                 )
                 .group_by(Employe.id)
                 .order_by(func.count(Pointage.id).desc())
@@ -519,11 +494,9 @@ async def prodige_donnees_rapport(
                 .filter(
                     Pointage.date_day >= date_deb,
                     Pointage.date_day <= date_fin,
-                    Pointage.status.in_(
+                    Pointage.status_arrivee.in_(
                         [
-                            ScoringState.PRESENT,
-                            ScoringState.RETARD_PRESENT,
-                            ScoringState.PRESENT_PARTIEL,
+                            ScoringState.PRESENT
                         ]
                     ),
                 )
@@ -532,65 +505,47 @@ async def prodige_donnees_rapport(
                 .limit(10)
                 .all()
             )
+            
             top__presents_periode = [
                 {"nom": r[0], "prenom": r[1], "matricule": r[2], "presences": r[3]}
                 for r in presents_periode
             ]
 
             # ===== LISTE DES EMPLOYES & ABSENCES PRECISES =====
-            emp = (
-                db.query(
-                    Employe.id,
-                    Employe.nom,
-                    Employe.prenom,
-                    Employe.matricule,
-                    Employe.poste,
-                    func.group_concat(func.concat(Pointage.date_day, "")).label(
-                        "jours_absence"
-                    ),
-                )
-                .join(Pointage)
+            # ÉTAPE 1 — Récupérer tous les employés
+            tous_les_employes = db.query(Employe).order_by(Employe.id).all()
+
+            # ÉTAPE 2 — Récupérer les jours d'absence par employé en une seule requête
+            absences_brutes = (
+                db.query(Pointage.id_user, Pointage.date_day)
                 .filter(
                     Pointage.date_day >= date_deb,
                     Pointage.date_day <= date_fin,
-                    Pointage.status == ScoringState.ABSENT,
+                    Pointage.status_arrivee == ScoringState.ABSENT,
                 )
-                .group_by(Employe.id)
-                .order_by(Employe.id)
                 .all()
             )
 
+            # ÉTAPE 3 — Regrouper les jours d'absence par employé en mémoire (O(1) access)
+            from collections import defaultdict
+            absences_mapping = defaultdict(list)
+            for absence in absences_brutes:
+                absences_mapping[absence.id_user].append(str(absence.date_day))
+
+            # ÉTAPE 4 — Construire la liste complète
             employes = [
                 {
                     "id": e.id,
                     "matricule": e.matricule,
                     "nom": f"{e.nom} {e.prenom}",
-                    "poste": e.poste,
-                    "jours_absence": (
-                        e.jours_absence.split(",") if e.jours_absence else []
-                    ),
-                    "statistiques": {},
+                    "poste": e.poste or "",
+                    "jours_absence": absences_mapping.get(e.id, []),  # ✅ liste vide si aucune absence
+                    "statistiques": {},  # sera injecté après
                 }
-                for e in emp
+                for e in tous_les_employes
             ]
 
-            # LOGIQUE HYBRIDE : Étape 1 - Calcul du total théorique d'heures
-            total = 0
-            is_standard_periode = periode in ["hebdomadaire", "mensuelle", "annuel"]
-
-            if is_standard_periode:
-                if periode == "hebdomadaire":
-                    total = 8 * 5
-                elif periode == "mensuelle":
-                    total = 8 * 22
-                elif periode == "annuel":
-                    total = 8 * 22 * 12
-            else:
-                # Calcul de la période personnalisée en jours réels
-                delta = date_fin - date_deb
-                nb_jours = max(delta.days + 1, 0)
-                total = 8 * nb_jours
-
+            
             # LOGIQUE HYBRIDE : Étape 2 - Sélection de la source des statistiques
             stats_mapping = {}
 
@@ -612,14 +567,15 @@ async def prodige_donnees_rapport(
                     )
                     .all()
                 )
+
                 stats_mapping = {
                     st[0]: {
                         "presences": st[1],
                         "absences": st[2],
                         "retards": st[3],
-                        "taux_presence": (st[1] / total) * 100 if total > 0 else 0,
-                        "heures_travail": st[4],
-                        "heures_supplementaires": st[5],
+                        "taux_presence": round((st[1] / nb_jours * 100), 2) if nb_jours > 0 else 0,
+                        "heures_travail": round(float(st[4] or 0), 2),
+                        "heures_supplementaires": round(float(st[5] or 0), 2),
                     }
                     for st in stats_emp
                 }
@@ -629,41 +585,34 @@ async def prodige_donnees_rapport(
                     db.query(
                         Pointage.id_user,
                         func.sum(
-                            func.case(
-                                whens=[
-                                    (
-                                        Pointage.status.in_(
-                                            [
-                                                ScoringState.PRESENT,
-                                                ScoringState.RETARD_PRESENT,
-                                                ScoringState.PRESENT_PARTIEL,
-                                            ]
-                                        ),
-                                        1,
-                                    )
-                                ],
+                            case(
+                                (
+                                    Pointage.status_arrivee.in_(
+                                        [
+                                            ScoringState.PRESENT,
+                                        ]
+                                    ),
+                                    1,
+                                ),
                                 else_=0,
                             )
                         ),
                         func.sum(
-                            func.case(
-                                whens=[(Pointage.status == ScoringState.ABSENT, 1)],
+                            case(
+                                (Pointage.status_arrivee == ScoringState.ABSENT, 1),
                                 else_=0,
                             )
                         ),
                         func.sum(
-                            func.case(
-                                whens=[
-                                    (
-                                        Pointage.status.in_(
-                                            [
-                                                ScoringState.RETARD,
-                                                ScoringState.RETARD_PRESENT,
-                                            ]
-                                        ),
-                                        1,
-                                    )
-                                ],
+                            case(
+                                (
+                                    Pointage.status_arrivee.in_(
+                                        [
+                                            ScoringState.RETARD,
+                                        ]
+                                    ),
+                                    1,
+                                ),
                                 else_=0,
                             )
                         ),
@@ -682,11 +631,9 @@ async def prodige_donnees_rapport(
                         "presences": int(st[1] or 0),
                         "absences": int(st[2] or 0),
                         "retards": int(st[3] or 0),
-                        "taux_presence": (
-                            (int(st[1] or 0) / total) * 100 if total > 0 else 0
-                        ),
-                        "heures_travail": float(st[4] or 0.0),
-                        "heures_supplementaires": float(st[5] or 0.0),
+                        "taux_presence": round((int(st[1] or 0) / nb_jours * 100), 2) if nb_jours > 0 else 0,
+                        "heures_travail": round(float(st[4] or 0), 2),
+                        "heures_supplementaires": round(float(st[5] or 0), 2),
                     }
                     for st in stats_dynamiques
                 }
@@ -706,45 +653,38 @@ async def prodige_donnees_rapport(
                 )
 
             # ===== EVOLUTION CHRONOLOGIQUE (Pour ton graphique Frontend) =====
-            #  Correction : Remplacement des syntaxes cassées par du SQL CASE WHEN valide
             evolution_brute = (
                 db.query(
                     Pointage.date_day,
                     func.sum(
-                        func.case(
-                            whens=[
-                                (
-                                    Pointage.status.in_(
-                                        [
-                                            ScoringState.PRESENT,
-                                            ScoringState.RETARD_PRESENT,
-                                            ScoringState.PRESENT_PARTIEL,
-                                        ]
-                                    ),
-                                    1,
-                                )
-                            ],
+                        case(
+                            (
+                                Pointage.status_arrivee.in_(
+                                    [
+                                        ScoringState.PRESENT,
+                                    ]
+                                ),
+                                1,
+                            ),
                             else_=0,
                         )
                     ).label("presents"),
                     func.sum(
-                        func.case(
-                            whens=[(Pointage.status == ScoringState.ABSENT, 1)], else_=0
+                        case(
+                            (Pointage.status_arrivee == ScoringState.ABSENT, 1), else_=0
                         )
                     ).label("absents"),
                     func.sum(
-                        func.case(
-                            whens=[
-                                (
-                                    Pointage.status.in_(
-                                        [
-                                            ScoringState.RETARD,
-                                            ScoringState.RETARD_PRESENT,
-                                        ]
-                                    ),
-                                    1,
-                                )
-                            ],
+                        case(
+                            (
+                                Pointage.status_arrivee.in_(
+                                    [
+                                        ScoringState.RETARD,
+                                    ]
+                                ),
+                                1,
+                            )
+                            ,
                             else_=0,
                         )
                     ).label("retards"),
@@ -781,9 +721,20 @@ async def prodige_donnees_rapport(
                 "evolution": evolution,
             }
 
-        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(2)
+        yield f"data: {json.dumps(payload, ensure_ascii=False, cls=CustomEncoder)}\n\n"
+        await asyncio.sleep(5)
 
+
+def nb_jours_ouvrables(date_deb, date_fin):
+    """Compte les jours du lundi au vendredi entre deux dates"""
+    count = 0
+    current = datetime.strptime(date_deb, "%Y-%m-%d").date()
+    date_fin = datetime.strptime(date_fin, "%Y-%m-%d").date()
+    while current <= date_fin:
+        if current.weekday() < 5:  # 0=Lundi, 4=Vendredi
+            count += 1
+        current += timedelta(days=1)
+    return count
 
 @router.get("/rapport")
 async def get_repport_stream(
@@ -798,4 +749,14 @@ async def get_repport_stream(
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Accès refusé")
 
-    return EventSourceResponse(prodige_donnees_rapport(token, periode, debut, fin))
+    return EventSourceResponse(prodige_donnees_rapport(token, periode, datetime.strptime(debut, "YYYY-MM-JJ"), datetime.strptime(fin, "YYYY-MM-JJ")))
+
+
+
+from decimal import Decimal
+
+class CustomEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)

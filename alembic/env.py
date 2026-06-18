@@ -10,6 +10,7 @@ from models.demandes import DemandesInscription
 from models.employe import Employe
 from models.pointages import Pointage
 from models.statistique import Statistique
+from models.config import Parametre
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

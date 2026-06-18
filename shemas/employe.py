@@ -14,6 +14,7 @@ class RequestModelEmp(BaseModel):
     email : str
     password : str
     poste : str
+    status: str | None
 
 class ValidatedInscriptionModelRequest(BaseModel):
     email:str 
@@ -30,7 +31,8 @@ class ResponseModelEmp(BaseModel):
     role: str
     email : str
     poste : str
-    status: str
+    status: str | None
 
     class Config:
         from_attributes = True
+

@@ -7,23 +7,27 @@ from pathlib import Path
 import cv2
 from apscheduler.triggers import cron
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi_crons import Crons
 from fastapi.middleware.cors import CORSMiddleware
 
 from database.database import backend, get_db
+from models.config import Parametre
 from models.employe import Employe
 from routes.employe import router as employe_router
 from routes.pointage import router as pointage_router
 from routes.demandes import router as demande_router
 from routes.auth import router as auth_router
 from routes.statistiques import router as stats_router
+from routes.settings import router as settings_router
+from services.Setting import get_settings
 from services.employe import preload_cache, clear_cache
 from services.pointage import init_pointage
 from services.statitiques import (init_stats_week, init_stats_month,
                                    init_stats_year, traitement_statistiques_journalieres)
+
 from utils.global_var import VideoSetting, FaceRecognitionSetting
-import face_recognition
+
 
 load_dotenv()
 
@@ -48,18 +52,19 @@ def start_read():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. Démarrer la caméra
-    thread = threading.Thread(target=start_read, daemon=True)
+    """ thread = threading.Thread(target=start_read, daemon=True)
     thread.start()
-    print("Caméra démarrée")
+    print("Caméra démarrée")"""
 
     # 2. Précharger le cache des encodages
     with get_db() as db:
         preload_cache(db)
+        get_settings(db)
 
     print("Application prête")
     yield
     # ── Arrêt ──
-    FaceRecognitionSetting.encoding_cache.clear()
+    #FaceRecognitionSetting.encoding_cache.clear()
     print("Serveur arrêté")
 
 # ── Application ──
@@ -67,7 +72,7 @@ app = FastAPI(
     title="Système de Pointage",
     description="API pour gestion des employés et du pointage de présence",
     version="1.0.0",
-    #lifespan=lifespan
+    lifespan=lifespan
 )
 
 crons = Crons(app, state_backend=backend)
@@ -156,6 +161,7 @@ app.include_router(pointage_router)
 app.include_router(demande_router)
 app.include_router(auth_router)
 app.include_router(stats_router)
+app.include_router(settings_router)
 
 
 @app.get('/')
@@ -165,3 +171,4 @@ def home():
 @app.get('/health')
 def health_check():
     return {"status": "OK"}
+

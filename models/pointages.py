@@ -9,11 +9,11 @@ from database.database import Base
 
 class ScoringState(str, enum.Enum):
     ABSENT          = "absent"           # Jamais pointé
-    PENDING         = "pending"          # Reconnaissance échouée
-    PRESENT_PARTIEL = "present_partiel"  # 1er pointage validé, en attente du 2ème
+    PENDING         = "pending"         # Reconnaissance échouée
     PRESENT         = "present"          # 2 pointages réussis, à l'heure
     RETARD          = "retard"           # 1er pointage après 8h, en attente du 2ème
-    RETARD_PRESENT  = "retard_present"   # 2 pointages réussis, arrivée en retard
+    
+
 
 class Pointage(Base):
     __tablename__ = "pointages"
@@ -29,14 +29,22 @@ class Pointage(Base):
 
     minutes_sup = Column(Integer, default=0)
 
-    etat_pointage = Column(Integer, default=0, nullable=False)
+    numero_pointage = Column(Integer, default=0, nullable=False)
 
-    status = Column(
+    distance_arrivee = Column(Integer, default=1) #distance entre les visages
+    distance_depart = Column(Integer, default=1)
+
+    status_arrivee = Column(
         Enum(ScoringState),
         default=ScoringState.ABSENT
     )
+    status_depart = Column(
+        Enum(ScoringState),
+        default=ScoringState.PRESENT
+    )
 
-    photo_pointage = Column(String(100))
+    photo_pointage_arrivee = Column(String(100))
+    photo_pointage_depart = Column(String(100))
 
     id_user = Column(
         Integer,

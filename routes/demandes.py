@@ -49,11 +49,11 @@ import asyncio, json
 
 async def prodige_donnees(token: str):
     while True:
-        # ✅ Vérifier le token à chaque itération
+        # Vérifier le token à chaque itération
         user = verify_access_token(token)
 
         if user is None:
-            # ✅ Envoyer un événement spécial au lieu de crasher
+            # Envoyer un événement spécial au lieu de crasher
             yield f"event: token_expired\ndata: {{}}\n\n"
             break  # Arrêter le générateur
 
@@ -80,15 +80,13 @@ async def get_all_stream_req(token: str = Query(...)):
 
 
 """effectuer une demande d'inscription"""
-
-
 @router.post("/inscription", response_model=ResponseRequest)
 async def new_inscrition(dem: ModelRequest = Form(media_type="multipart/form-data")):
     # verification de l'extension
     await verify_picture(dem.photo)
     await dem.photo.seek(0)
 
-    images_location = str(Path(UPLOAD_DIR) / f"{dem.matricule}.jpg")
+    images_location = str(Path(UPLOAD_DIR / f"{dem.matricule}.jpg") )
     with open(images_location, "wb") as f:
         content = await dem.photo.read()
         f.write(content)

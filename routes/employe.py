@@ -1,17 +1,23 @@
 import asyncio
 import json
+from pathlib import Path
+import shutil
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Form
 from fastapi.sse import EventSourceResponse
+from sqlalchemy import select, exists
 
+from routes.demandes import UPLOAD_DIR
 from services.auth import get_current_user, get_password_hash, get_user_by_email, verify_access_token
 from database.database import  get_db
 from models.demandes import DemandesInscription
 from models.employe import Employe
 from models.pointages import Pointage
 from models.statistique import Statistique
+from services.demande import verify_picture
 from services.employe import get_user_by_id
+from services.pointage import IMG_DIR
 from shemas.employe import ResponseModelEmp, RequestModelEmp, ValidatedInscriptionModelRequest
 from fastapi.responses import FileResponse
 
@@ -103,28 +109,43 @@ def add_user(
         db.refresh(emp)
 
     return emp
-"""Supprimer un utilisateur"""
-@router.delete("/delete_user", response_model=dict[str, str])
-def delete_user(id_user: int, current_user: RequestModelEmp | None = Depends(get_current_user)):
-    if current_user and current_user.role != "admin":
-        raise HTTPException(status_code=400, detail="we can not access from this route")
 
+@router.post("/new_user", response_model=ResponseModelEmp)
+async def new_user(dem: RequestModelEmp = Form(media_type="multipart/form-data")):
+    # verification de l'extension
+    await verify_picture(dem.photo)
+    await dem.photo.seek(0)
 
+    images_location = str(Path(UPLOAD_DIR / f"{dem.matricule}.jpg") )
+    with open(images_location, "wb") as f:
+        content = await dem.photo.read()
+        f.write(content)
+    hashed_password = get_password_hash(dem.password)
+    demande = Employe(
+        nom=dem.nom,
+        prenom=dem.prenom,
+        sexe=dem.sexe,
+        matricule=dem.matricule,
+        email=dem.email,
+        telephone=dem.telephone,
+        photo=images_location,
+        password=hashed_password,
+        poste=dem.poste,
+        qrCode=dem.qrCode,
+        role=dem.role,
+        status=dem.status
+    )
     with get_db() as db:
-        user_to_delete = get_user_by_id(id_user, db)
-        if not user_to_delete:
-            raise HTTPException(status_code=400, detail="user do not exist")
-        sconring_to_delete = db.query(Pointage).filter(Pointage.id_user == id_user).all()
-        if sconring_to_delete:
-            for item in sconring_to_delete:
-                db.delete(item)
-        stat_to_delete = db.query(Statistique).filter(Statistique.id_user == id_user).all()
-        if stat_to_delete:
-            for item in stat_to_delete:
-                db.delete(item)
-        db.delete(user_to_delete)
-        db.commit()
-    return {"message" : "success"}
+        get_exist_dmd = select(
+            exists().where(Employe.matricule == dem.matricule)
+        )
+        flag = db.scalar(get_exist_dmd)
+        if not flag:
+            db.add(demande)
+            db.commit()
+            db.refresh(demande)
+    return demande
+
 
 """modifier un utilisateur"""
 @router.put("/update_user", response_model=ResponseModelEmp)
@@ -197,8 +218,22 @@ def delete_user(
         
         db.query(Pointage).filter(Pointage.id_user == id).delete()
 
+        folderuser = Path(IMG_DIR / user.matricule)
+        if folderuser.exists() and folderuser.is_dir():
+            shutil.rmtree(folderuser)
+            print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>dossier supprimer")
+        else:
+            print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>erreur lors de la suppression")
         
         db.query(Statistique).filter(Statistique.id_user == id).delete()
+
+        picture = Path(user.photo)
+
+        if picture.exists() and picture.is_file:
+            picture.rmdir()
+            print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>dossier supprimer")
+        else:
+            print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>erreur lors de la suppression")
 
         db.delete(user)
         db.commit()

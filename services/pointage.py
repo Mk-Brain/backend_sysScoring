@@ -34,8 +34,13 @@ def init_pointage(db: Session):
             date_day=date.today(),
             heure_arrive=None,      # None au lieu de l'heure actuelle
             heure_depart=None,      # None au lieu de l'heure actuelle
-            status=ScoringState.ABSENT,
-            photo_pointage="",
+            status_arrivee=ScoringState.ABSENT,
+            status_depart=ScoringState.ABSENT,
+            photo_pointage_arrivee="",
+            photo_pointage_depart="",
+            numero_pointage = 0,
+            minutes_travail = 0,
+            minutes_sup = 0,
             id_user=user_id,
         )
         db.add(scoring)
@@ -43,37 +48,8 @@ def init_pointage(db: Session):
     print("Pointages initialisés")
 
 
-"""def take_picture(mat: str):
-    frame = VideoSetting.frame
 
-    if frame is None or frame.size == 0:
-        return False
-
-    (h, w) = frame.shape[:2]
-    blob = cv2.dnn.blobFromImage(
-        cv2.resize(frame, (300, 300)), 1.0,
-        (300, 300), (104.0, 177.0, 123.0)
-    )
-    net.setInput(blob)
-    detections = net.forward()
-
-    #vérifier qu'un visage est présent
-    face_detected = False
-    for i in range(detections.shape[2]):
-        confidence = detections[0, 0, i, 2]
-        if confidence > 0.5:
-            face_detected = True
-            break
-
-    if not face_detected:
-        return False
-
-    # Sauvegarder le frame entier
-    save_path = Path.cwd().parent / "backend" / "img" / mat / "img.png"
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    return cv2.imwrite(str(save_path), frame)"""
-
-IMG_DIR = Path.cwd().parent / "backend" / "img"
+IMG_DIR = Path.cwd().parent / "backend" / "img" 
 
 def take_picture(mat: str) -> bool:
     """
@@ -107,7 +83,7 @@ def take_picture(mat: str) -> bool:
         return False
 
     # Sauvegarder le frame original complet
-    save_path = IMG_DIR / mat / "img.png"
+    save_path = IMG_DIR / mat / datetime.now().date() / "img.png"
     save_path.parent.mkdir(parents=True, exist_ok=True)
     return cv2.imwrite(str(save_path), frame)
 
