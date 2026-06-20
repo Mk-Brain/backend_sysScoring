@@ -101,7 +101,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     return user
 
-def verify_token(refresh_token: str, user_refresh_token: str):
+def verify_token(refresh_token: str):
     try:
         payload = jwt.decode(refresh_token, key, algorithms=[ALGORITHM])
         email = payload.get("sub")
@@ -112,8 +112,7 @@ def verify_token(refresh_token: str, user_refresh_token: str):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    if refresh_token != user_refresh_token:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
     with get_db() as db:
         user = get_user_by_email(email, db)
     if not user:

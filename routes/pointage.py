@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,7 @@ from pyzbar.wrapper import ZBarSymbol
 from sqlalchemy.orm import joinedload
 
 from models.config import Parametre
+from models.statistique import Statistique
 from services.auth import get_current_user, verify_access_token
 from database.database import get_db
 from models.employe import Employe
@@ -77,7 +79,7 @@ async def get_all_stream_req(token: str = Query(...)):
 @router.get("/my_scoring", response_model=list[ModelScoring])
 def get_all_pointages(current_user: RequestModelEmp | None = Depends(get_current_user)):
     with get_db() as db:
-        pointages = db.query(Pointage).filter(Pointage.id_user == current_user.id).all()
+        pointages = db.query(Pointage).options(joinedload(Pointage.users)).filter(Pointage.id_user == current_user.id).all()
         if not pointages:
             return []
         return pointages
@@ -92,28 +94,33 @@ def change_pointage_status(
     body: ChangeStatusPointageRequest,
     current_user: RequestModelEmp = Depends(get_current_user),
 ):
-
     if current_user.role != "admin":
-        raise HTTPException(
-            status_code=403, detail="You can not access from this route"
-        )
+        raise HTTPException(status_code=403, detail="You can not access from this route")
 
     with get_db() as db:
         pointage = db.query(Pointage).filter(Pointage.id == id).first()
         if not pointage:
             raise HTTPException(status_code=404, detail="Pointage not found")
+
+        print(f">>> numero_pointage={body.numero_pointage!r} status={body.status!r}")  # debug
+
         if body.numero_pointage == 1:
             pointage.status_arrivee = body.status
         elif body.numero_pointage == 2:
             pointage.status_depart = body.status
+        else:
+            print(">>> AUCUNE branche exécutée — numero_pointage invalide")
+
+        db.add(pointage)
         db.commit()
+        db.refresh(pointage)
+        print(f">>> après commit: arrivee={pointage.status_arrivee} depart={pointage.status_depart}")
 
     return {"message": "Statut du pointage mis à jour"}
 
 
+
 """lire le qr code"""
-
-
 @router.get("/scan_qr")
 def scan_qr(mat: str):
     scan_result = None
@@ -230,11 +237,11 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
         now = datetime.now().time()
 
         # 5. Archiver la photo — commun aux deux cas
-        file = Path(IMG_DIR / current_user.matricule / datetime.now().date() / "img.png")
+        file = Path(IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / "img.png")
         if not file.exists():
             raise HTTPException(status_code=404, detail="Photo de pointage introuvable.")
         new_name = file.rename(
-            IMG_DIR / current_user.matricule / datetime.now().date() / f"img{pointage.numero_pointage}.png"
+            str(IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{pointage.numero_pointage}.png")
         )
         img_path = str(new_name)
 
@@ -286,19 +293,33 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
 
 
 @router.delete("/delete/{id}")
-def delete_pointage(id: int, current_user: RequestModelEmp = Depends(get_current_user)):
+def delete_user(id: int, current_user: RequestModelEmp = Depends(get_current_user)):
     if current_user.role != "admin":
-        raise HTTPException(
-            status_code=403, detail="You can not access from this route"
-        )
+        raise HTTPException(status_code=403, detail="You can not access from this route")
 
     with get_db() as db:
-        pointage = db.query(Pointage).filter(Pointage.id == id).first()
+        user = db.query(Employe).filter(Employe.id == id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-        if not pointage:
-            raise HTTPException(status_code=404, detail="Pointage not found")
+        db.query(Pointage).filter(Pointage.id_user == id).delete()
+        db.query(Statistique).filter(Statistique.id_user == id).delete()
 
-        db.delete(pointage)
+        # Suppression des images de pointage (dossier par matricule, sous-dossiers par date)
+        folderuser = Path(IMG_DIR) / user.matricule
+        try:
+            if folderuser.exists() and folderuser.is_dir():
+                shutil.rmtree(folderuser)
+        except OSError as e:
+            print(f"Erreur suppression dossier pointage: {e}")
+
+        # Suppression de la photo de profil
+        try:
+            picture = Path(user.photo)
+            if picture.exists() and picture.is_file():
+                picture.unlink()
+        except OSError as e:
+            print(f"Erreur suppression photo: {e}")
+
+        db.delete(user)
         db.commit()
-
-    return {"message": "Pointage supprimé avec succès"}

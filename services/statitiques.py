@@ -81,17 +81,33 @@ def recuperer_statistique_active(
     )
 
 
+
+
+
 def mettre_a_jour_statistique(
     statistique,
     pointage,
     minutes_travail
 ):
+    """
 
-    if pointage.status == ScoringState.PRESENT:
+
+    - PRESENT : nb_presence += 1
+    - RETARD  : nb_presence += 1, nb_retard += 1 (un retard reste une présence)
+    - ABSENT  : nb_absence += 1, total_minutes_absence += DUREE_NORMALE
+    - PENDING : pointage incomplet (un seul des deux pointages effectués),
+                on ne le compte pas du tout dans les stats.
+    """
+
+    if pointage.status_arrivee == ScoringState.PENDING:
+        # Pointage incomplet : on ne met rien à jour, on sort directement.
+        return
+
+    if pointage.status_arrivee == ScoringState.PRESENT:
 
         statistique.nb_presence += 1
 
-    elif pointage.status == ScoringState.ABSENT:
+    elif pointage.status_arrivee == ScoringState.ABSENT:
 
         statistique.nb_absence += 1
 
@@ -99,7 +115,7 @@ def mettre_a_jour_statistique(
             DUREE_NORMALE
         )
 
-    elif pointage.status == ScoringState.RETARD_PRESENT:
+    elif pointage.status_arrivee == ScoringState.RETARD:
 
         statistique.nb_presence += 1
         statistique.nb_retard += 1
@@ -114,18 +130,24 @@ def mettre_a_jour_statistique(
             minutes_travail - DUREE_NORMALE
         )
 
+
 def mettre_a_jour_toutes_les_statistiques(
     db,
     pointage,
     minutes_travail
 ):
 
+    # Un pointage incomplet (arrivée sans départ confirmé) ne doit
+    # impacter aucune période de statistique.
+    if pointage.status_arrivee == ScoringState.PENDING:
+        return
+
     types = [
         "week",
         "month",
         "year"
     ]
-    #appliquer la mise à jour pour chaque periode
+    # appliquer la mise à jour pour chaque periode
     for type_periode in types:
 
         stat = recuperer_statistique_active(

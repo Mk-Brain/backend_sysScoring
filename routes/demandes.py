@@ -43,6 +43,14 @@ def get_all_(current_user: RequestModelEmp = Depends(get_current_user)):
         return {"message": "Aucune demande d'inscrition"}
     return  demandes"""
 
+@router.get("/get_request/{id}", response_model=ResponseRequest)
+def get_all_(id: int ):
+    with get_db() as db:
+        demande = db.query(DemandesInscription).filter(DemandesInscription.id == id).first()
+    if not demande:
+        raise HTTPException(status_code="401", detail="demande non trouvés")
+    return  demande
+
 
 import asyncio, json
 
@@ -85,8 +93,8 @@ async def new_inscrition(dem: ModelRequest = Form(media_type="multipart/form-dat
     # verification de l'extension
     await verify_picture(dem.photo)
     await dem.photo.seek(0)
-
-    images_location = str(Path(UPLOAD_DIR / f"{dem.matricule}.jpg") )
+    chemin = Path(UPLOAD_DIR) / f"{dem.matricule}.jpg"
+    images_location = str(chemin)
     with open(images_location, "wb") as f:
         content = await dem.photo.read()
         f.write(content)

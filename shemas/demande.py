@@ -37,8 +37,8 @@ class ResponseRequest(BaseModel):
     email : str
     telephone : str
     photo : str
-    poste : str
-    status: str
+    poste : str | None = None
+    status: str | None = None
     comments: str | None = None
     date_req: date
     hour_req:  time

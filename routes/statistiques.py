@@ -35,14 +35,95 @@ def get_statistiques(current_user: RequestModelEmp = Depends(get_current_user)):
 
 
 "récuperer les statistiques d'de l'utilisateur connecter"
-@router.get("/my_stats", response_model=list[ModelResponseStats])
-def get_statistiques(current_user: RequestModelEmp = Depends(get_current_user)):
 
-    with get_db() as db:
-        stats = (
-            db.query(Statistique).filter(Statistique.id_user == current_user.id).all()
-        )
-    return stats
+
+def get_period_bounds(type_periode: str) -> tuple[date, date]:
+    """Calcule les bornes de la période en cours"""
+    today = date.today()
+
+    if type_periode == "hebdomadaire":
+        debut = today - timedelta(days=calendar.weekday(today.year, today.month, today.day))
+        fin = debut + timedelta(days=6)
+    elif type_periode == "mensuelle":
+        debut = today.replace(day=1)
+        fin = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+    elif type_periode == "annuel":
+        debut = date(today.year, 1, 1)
+        fin = date(today.year, 12, 31)
+    else:
+        raise ValueError("type_periode invalide (hebdomadaire | mensuelle | annuel)")
+
+    return debut, fin
+
+
+async def prodige_statistique_employe(token: str, id_user: int):
+    while True:
+        user = verify_access_token(token)
+        if user is None:
+            yield f"event: token_expired\ndata: {{}}\n\n"
+            break
+
+        periodes = ["hebdomadaire", "mensuelle", "annuel"]
+
+        with get_db() as db:
+            resultats = []
+
+            for type_periode in periodes:
+                date_debut, date_fin = get_period_bounds(type_periode)
+
+                result = (
+                    db.query(
+                        func.sum(case((Pointage.status_arrivee == ScoringState.PRESENT, 1), else_=0)),
+                        func.sum(case((Pointage.status_arrivee == ScoringState.ABSENT, 1), else_=0)),
+                        func.sum(case((Pointage.status_arrivee == ScoringState.RETARD, 1), else_=0)),
+                        func.sum(Pointage.minutes_travail),
+                        func.sum(Pointage.minutes_sup),
+                    )
+                    .filter(
+                        Pointage.id_user == id_user,
+                        Pointage.date_day >= date_debut,
+                        Pointage.date_day <= date_fin,
+                    )
+                    .first()
+                )
+
+                nb_presence, nb_absence, nb_retard, total_minutes_travail, total_minutes_sup = (
+                    int(result[0] or 0),
+                    int(result[1] or 0),
+                    int(result[2] or 0),
+                    int(result[3] or 0),
+                    int(result[4] or 0),
+                )
+
+                resultats.append({
+                    "id": 0,
+                    "type_periode": type_periode,
+                    "date_debut": str(date_debut),
+                    "date_fin": str(date_fin),
+                    "nb_presence": nb_presence,
+                    "nb_absence": nb_absence,
+                    "nb_retard": nb_retard,
+                    "total_minutes_travail": total_minutes_travail,
+                    "total_minutes_sup": total_minutes_sup,
+                    "total_minutes_absence": 0,
+                    "id_user": id_user,
+                })
+
+        yield f"data: {json.dumps(resultats, ensure_ascii=False)}\n\n"
+        await asyncio.sleep(30)
+
+
+@router.get("/stats_employe")
+async def get_stats_employe_stream(
+    token: str = Query(...),
+    id_user: int = Query(...),
+):
+    user = verify_access_token(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Token invalide")
+
+    return EventSourceResponse(prodige_statistique_employe(token, id_user))
+
 
 
 
@@ -728,12 +809,10 @@ async def prodige_donnees_rapport(
 def nb_jours_ouvrables(date_deb, date_fin):
     """Compte les jours du lundi au vendredi entre deux dates"""
     count = 0
-    current = datetime.strptime(date_deb, "%Y-%m-%d").date()
-    date_fin = datetime.strptime(date_fin, "%Y-%m-%d").date()
-    while current <= date_fin:
-        if current.weekday() < 5:  # 0=Lundi, 4=Vendredi
+    while date_deb <= date_fin:
+        if date_deb.weekday() < 5:  # 0=Lundi, 4=Vendredi
             count += 1
-        current += timedelta(days=1)
+        date_deb += timedelta(days=1)
     return count
 
 @router.get("/rapport")
@@ -749,7 +828,7 @@ async def get_repport_stream(
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Accès refusé")
 
-    return EventSourceResponse(prodige_donnees_rapport(token, periode, datetime.strptime(debut, "YYYY-MM-JJ"), datetime.strptime(fin, "YYYY-MM-JJ")))
+    return EventSourceResponse(prodige_donnees_rapport(token, periode, datetime.strptime(debut, "%Y-%m-%d").date(), datetime.strptime(fin, "%Y-%m-%d").date()))
 
 
 

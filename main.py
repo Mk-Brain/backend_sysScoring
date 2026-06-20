@@ -52,7 +52,7 @@ def start_read():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. Démarrer la caméra
-    """ thread = threading.Thread(target=start_read, daemon=True)
+    """thread = threading.Thread(target=start_read, daemon=True)
     thread.start()
     print("Caméra démarrée")"""
 
@@ -80,7 +80,7 @@ crons = Crons(app, state_backend=backend)
 # ── Crons ──
 current_date = date.today()
 
-#@crons.cron(expr="0 0 * * *", name="init scoring")
+#@crons.cron(expr="20 * * * *", name="init scoring")
 def init_scoring():
     with get_db() as db:
         return init_pointage(db=db)
@@ -100,7 +100,7 @@ def init_week_stats():
             )
             db.commit()
 
-#@crons.cron(expr="14 * 30 * *", name="init month stats")
+#@crons.cron(expr="20 * * * *", name="init month stats")
 def init_month_stats():
     with get_db() as db:
         id_users = db.query(Employe.id).all()
@@ -114,7 +114,7 @@ def init_month_stats():
             )
             db.commit()
 
-#@crons.cron(expr="14 * 31 12 *", name="init year stats")
+#@crons.cron(expr="20 * * * *", name="init year stats")
 def init_year_stats():
     with get_db() as db:
         id_users = db.query(Employe.id).all()

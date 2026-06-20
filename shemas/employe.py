@@ -9,7 +9,7 @@ class RequestModelEmp(BaseModel):
     sexe : str
     telephone : str
     photo : str
-    qrCode : str = "employe"
+    qrCode : str
     role: str
     email : str
     password : str
@@ -36,3 +36,19 @@ class ResponseModelEmp(BaseModel):
     class Config:
         from_attributes = True
 
+
+from fastapi import UploadFile
+
+class RequestModelNewEmp(BaseModel):
+    nom: str
+    prenom: str
+    matricule: str
+    sexe: str
+    telephone: str
+    photo: UploadFile
+    qrCode: str = "employe"
+    role: str
+    email: str
+    password: str
+    poste: str
+    status: str | None

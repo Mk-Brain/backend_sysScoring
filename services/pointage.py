@@ -83,7 +83,7 @@ def take_picture(mat: str) -> bool:
         return False
 
     # Sauvegarder le frame original complet
-    save_path = IMG_DIR / mat / datetime.now().date() / "img.png"
+    save_path = IMG_DIR / mat / f"{datetime.now().date()}" / "img.png"
     save_path.parent.mkdir(parents=True, exist_ok=True)
     return cv2.imwrite(str(save_path), frame)
 

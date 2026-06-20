@@ -2,13 +2,12 @@ import asyncio
 import json
 from pathlib import Path
 import shutil
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Form
 from fastapi.sse import EventSourceResponse
 from sqlalchemy import select, exists
 
-from routes.demandes import UPLOAD_DIR
+ # removed import of UPLOAD_DIR from routes.demandes to avoid redeclaration / circular import
 from services.auth import get_current_user, get_password_hash, get_user_by_email, verify_access_token
 from database.database import  get_db
 from models.demandes import DemandesInscription
@@ -18,7 +17,7 @@ from models.statistique import Statistique
 from services.demande import verify_picture
 from services.employe import get_user_by_id
 from services.pointage import IMG_DIR
-from shemas.employe import ResponseModelEmp, RequestModelEmp, ValidatedInscriptionModelRequest
+from shemas.employe import ResponseModelEmp, RequestModelEmp, ValidatedInscriptionModelRequest, RequestModelNewEmp
 from fastapi.responses import FileResponse
 
 router = APIRouter(
@@ -29,11 +28,11 @@ router = APIRouter(
 
 async def prodige_donnees(token: str):
     while True:
-        # ✅ Vérifier le token à chaque itération
+        # Vérifier le token à chaque itération
         user = verify_access_token(token)
 
         if user is None:
-            # ✅ Envoyer un événement spécial au lieu de crasher
+            # Envoyer un événement spécial au lieu de crasher
             yield f"event: token_expired\ndata: {{}}\n\n"
             break  # Arrêter le générateur
 
@@ -88,6 +87,8 @@ def add_user(
         if not req:
             raise HTTPException(status_code=400, detail="Request do not exist")
 
+        req.status = "accepted"
+
         hashed_password = get_password_hash(req.password)
         qrcode = req.nom + "-" + req.matricule + "-" + req.email
 
@@ -103,6 +104,7 @@ def add_user(
             password=hashed_password,
             poste=req.poste,
             role=params.role,
+            status="actif"
         )
         db.add(emp)
         db.commit()
@@ -111,12 +113,12 @@ def add_user(
     return emp
 
 @router.post("/new_user", response_model=ResponseModelEmp)
-async def new_user(dem: RequestModelEmp = Form(media_type="multipart/form-data")):
+async def new_user(dem: RequestModelNewEmp = Form(media_type="multipart/form-data")):
     # verification de l'extension
     await verify_picture(dem.photo)
     await dem.photo.seek(0)
-
-    images_location = str(Path(UPLOAD_DIR / f"{dem.matricule}.jpg") )
+    chemin = Path(UPLOAD_DIR) / f"{dem.matricule}.jpg"
+    images_location = str(chemin)
     with open(images_location, "wb") as f:
         content = await dem.photo.read()
         f.write(content)
@@ -162,6 +164,7 @@ def update_user(id_user: int,
                 email : str | None = None,
                 password : str | None = None,
                 poste : str | None = None,
+                status: str | None = None
                 ):
     if current_user and current_user.role != "admin":
         raise HTTPException(status_code=400, detail="we can not access from this route")
@@ -193,49 +196,51 @@ def update_user(id_user: int,
             to_update.password = password
         if poste:
             to_update.poste = poste
+        if status:
+            to_update.status = status
         db.commit()
         db.refresh(to_update)
     return to_update
 
+UPLOAD_DIR = Path("uploads")
+
 @router.get("/picture", response_class=FileResponse)
 async def picture(name: str):
-    return f"uploads/{name}.jpg"
+    file_path = UPLOAD_DIR / f"{name}.jpg"
 
-@router.delete("/delete/{id}", )
-def delete_user(
-    id: int,
-    current_user: RequestModelEmp = Depends(get_current_user)
-):
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Image non trouvée")
+
+    return FileResponse(file_path)
+
+@router.delete("/delete/{id}")
+def delete_user(id: int, current_user: RequestModelEmp = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="You can not access from this route")
 
     with get_db() as db:
         user = db.query(Employe).filter(Employe.id == id).first()
-
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        
         db.query(Pointage).filter(Pointage.id_user == id).delete()
-
-        folderuser = Path(IMG_DIR / user.matricule)
-        if folderuser.exists() and folderuser.is_dir():
-            shutil.rmtree(folderuser)
-            print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>dossier supprimer")
-        else:
-            print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>erreur lors de la suppression")
-        
         db.query(Statistique).filter(Statistique.id_user == id).delete()
 
-        picture = Path(user.photo)
+        # Suppression des images de pointage (dossier par matricule, sous-dossiers par date)
+        folderuser = Path(IMG_DIR) / user.matricule
+        try:
+            if folderuser.exists() and folderuser.is_dir():
+                shutil.rmtree(folderuser)
+        except OSError as e:
+            print(f"Erreur suppression dossier pointage: {e}")
 
-        if picture.exists() and picture.is_file:
-            picture.rmdir()
-            print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>dossier supprimer")
-        else:
-            print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>erreur lors de la suppression")
+        # Suppression de la photo de profil
+        try:
+            picture = Path(user.photo)
+            if picture.exists() and picture.is_file():
+                picture.unlink()
+        except OSError as e:
+            print(f"Erreur suppression photo: {e}")
 
         db.delete(user)
         db.commit()
-
-    return {"message": "Utilisateur supprimé avec succès"}
