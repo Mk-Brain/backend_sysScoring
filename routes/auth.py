@@ -26,7 +26,7 @@ router = APIRouter(
 
 
 @router.post("/token")
-async def login_for_access_token(response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
+async def login_for_access_token( form_data: OAuth2PasswordRequestForm = Depends()):
     # À faire: authentifier l'utilisateur
     with get_db() as db:
         user = authenticate_user(form_data.username, form_data.password, db)
@@ -40,14 +40,7 @@ async def login_for_access_token(response: Response, form_data: OAuth2PasswordRe
                                        expires_delta=timedelta(minutes=expire_access))
     refresh_token = create_refresh_token(data={"sub": user.email},
                                          expires_delta=timedelta(days=expire_refresh))
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=True,  # Obligatoire avec SameSite="None"
-        samesite="none",  # Autorise le partage entre domaines différents
-        max_age=expire_refresh * 24 * 60 * 60,
-    )
+
     return {"access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer"
@@ -67,19 +60,11 @@ def refresh_token(payload: RefreshTokenRequest, response: Response):
         raise HTTPException(status_code=400, detail="Invalid refresh token")
 
     new_access_token = create_access_token({"sub": user.email})
-    new_refresh_token = create_refresh_token(data={'sub': user.email}, expires_delta=timedelta(days=expire_refresh))
-    response.set_cookie(
-        key="refresh_token",
-        value=new_refresh_token,
-        httponly=True,
-        secure=True,  # Obligatoire avec SameSite="None"
-        samesite="none",  # Autorise le partage entre domaines différents
-        max_age=expire_refresh * 24 * 60 * 60,
-    )
+    #new_refresh_token = create_refresh_token(data={'sub': user.email}, expires_delta=timedelta(days=expire_refresh))
 
     return {
         "access_token": new_access_token,
-        "refresh_token": new_refresh_token,
+        "refresh_token": payload.refresh_token,
         "token_type": "bearer"
     }
 

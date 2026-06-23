@@ -5,6 +5,7 @@ from pathlib import Path
 import cv2
 import face_recognition
 import numpy as np
+from fastapi import HTTPException
 
 from models.employe import Employe
 from sqlalchemy.orm import Session
@@ -21,19 +22,31 @@ configFile = str(BASE_DIR / "assets" / "deploy.prototxt")
 
 net = cv2.dnn.readNetFromCaffe(configFile, modelFile)
 
+
 """fonction d'initialisation des pointages"""
 def init_pointage(db: Session):
-    """
-    Initialise les pointages du jour pour tous les employés.
-    Les heures sont nulles — elles seront renseignées au pointage.
-    Le statut par défaut est ABSENT.
-    """
-    all_user_ids = db.query(Employe.id).all()
-    for (user_id,) in all_user_ids:
+    today = date.today()
+    all_user_ids = db.query(*[Employe.id]).filter(Employe.status == "actif").all()
+
+    if not all_user_ids:
+        print(" Aucun employé actif trouvé — init_pointage annulée")
+        return
+
+    for user_id  in all_user_ids:
+
+        # verrification de l'exitance d'un pointage
+        existing = db.query(Pointage).filter(
+            Pointage.id_user == user_id[0],
+            Pointage.date_day == today
+        ).first()
+
+        if existing:
+            continue
+
         scoring = Pointage(
             date_day=date.today(),
-            heure_arrive=None,      # None au lieu de l'heure actuelle
-            heure_depart=None,      # None au lieu de l'heure actuelle
+            heure_arrive=None,
+            heure_depart=None,
             status_arrivee=ScoringState.ABSENT,
             status_depart=ScoringState.ABSENT,
             photo_pointage_arrivee="",
@@ -41,13 +54,10 @@ def init_pointage(db: Session):
             numero_pointage = 0,
             minutes_travail = 0,
             minutes_sup = 0,
-            id_user=user_id,
+            id_user=user_id[0],
         )
         db.add(scoring)
     db.commit()
-    print("Pointages initialisés")
-
-
 
 IMG_DIR = Path.cwd().parent / "backend" / "img" 
 
@@ -96,14 +106,15 @@ def encoding(mat: str):
     La conversion BGR->RGB est obligatoire car OpenCV lit en BGR
     et face_recognition attend du RGB.
     """
-    img_path = IMG_DIR / mat / "img.png"
+    img_path = IMG_DIR / mat / f"{datetime.now().date()}" / "img.png"
 
     if not img_path.exists():
-        return None
+        raise HTTPException(status_code=404, detail="l'image capturée n'a pas été enregistrée")
+
 
     img = cv2.imread(str(img_path))
     if img is None:
-        return None
+        raise HTTPException(status_code=404, detail="Impossible de lire l'image capturée")
 
     # BGR → RGB obligatoire pour face_recognition
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)

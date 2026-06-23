@@ -18,6 +18,7 @@ from models.demandes import DemandesInscription
 from sqlalchemy import exists, select
 
 from services.demande import verify_picture
+from services.employe import get_user_by_email
 from shemas.demande import (
     ResponseRequest,
     ModelRequest,
@@ -90,6 +91,10 @@ async def get_all_stream_req(token: str = Query(...)):
 """effectuer une demande d'inscription"""
 @router.post("/inscription", response_model=ResponseRequest)
 async def new_inscrition(dem: ModelRequest = Form(media_type="multipart/form-data")):
+    with get_db() as db:
+        user = get_user_by_email(dem.email, db)
+        if user:
+            raise HTTPException(status_code=400, detail="Username already registered")
     # verification de l'extension
     await verify_picture(dem.photo)
     await dem.photo.seek(0)

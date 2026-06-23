@@ -52,3 +52,6 @@ class RequestModelNewEmp(BaseModel):
     password: str
     poste: str
     status: str | None
+
+class UpdateStatusRequest(BaseModel):
+    status: str  # "actif" | "inactif"

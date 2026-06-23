@@ -52,9 +52,9 @@ def start_read():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. Démarrer la caméra
-    """thread = threading.Thread(target=start_read, daemon=True)
+    thread = threading.Thread(target=start_read, daemon=True)
     thread.start()
-    print("Caméra démarrée")"""
+    print("Caméra démarrée")
 
     # 2. Précharger le cache des encodages
     with get_db() as db:
@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
     print("Application prête")
     yield
     # ── Arrêt ──
-    #FaceRecognitionSetting.encoding_cache.clear()
+    FaceRecognitionSetting.encoding_cache.clear()
     print("Serveur arrêté")
 
 # ── Application ──
@@ -80,7 +80,7 @@ crons = Crons(app, state_backend=backend)
 # ── Crons ──
 current_date = date.today()
 
-#@crons.cron(expr="20 * * * *", name="init scoring")
+@crons.cron(expr="35 4 * * *", name="init scoring")
 def init_scoring():
     with get_db() as db:
         return init_pointage(db=db)
@@ -135,7 +135,7 @@ def lancer_mise_a_jour_statistiques():
         finally:
             db.close()
 
-#@crons.cron(expr="0 0 * * *", name="clear cache")
+@crons.cron(expr="0 0 * * *", name="clear cache")
 def clear_():
     """Vidage du cache à minuit"""
     clear_cache()

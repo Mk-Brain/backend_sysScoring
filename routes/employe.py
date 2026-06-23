@@ -17,7 +17,8 @@ from models.statistique import Statistique
 from services.demande import verify_picture
 from services.employe import get_user_by_id
 from services.pointage import IMG_DIR
-from shemas.employe import ResponseModelEmp, RequestModelEmp, ValidatedInscriptionModelRequest, RequestModelNewEmp
+from shemas.employe import ResponseModelEmp, RequestModelEmp, ValidatedInscriptionModelRequest, RequestModelNewEmp, \
+    UpdateStatusRequest
 from fastapi.responses import FileResponse
 
 router = APIRouter(
@@ -78,11 +79,6 @@ def add_user(
         raise HTTPException(status_code=400, detail="we can not access from this route")
 
     with get_db() as db:
-        user = get_user_by_email(params.email, db)
-        if user:
-            raise HTTPException(status_code=400, detail="Username already registered")
-
-        
         req = db.query(DemandesInscription).filter(DemandesInscription.email == params.email).first()
         if not req:
             raise HTTPException(status_code=400, detail="Request do not exist")
@@ -212,6 +208,29 @@ async def picture(name: str):
         raise HTTPException(status_code=404, detail="Image non trouvée")
 
     return FileResponse(file_path)
+
+@router.patch("/{user_id}/status")
+def update_status(
+    user_id: int,
+    payload: UpdateStatusRequest,
+    current_user: RequestModelEmp = Depends(get_current_user)
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+    if payload.status not in ("actif", "inactif"):
+        raise HTTPException(status_code=400, detail="Statut invalide")
+
+    with get_db() as db:
+        emp = db.query(Employe).get(user_id)
+        if not emp:
+            raise HTTPException(status_code=404, detail="Employé introuvable")
+
+        emp.status = payload.status
+        db.commit()
+        db.refresh(emp)
+
+    return {"message": "success", "status": payload.status}
 
 @router.delete("/delete/{id}")
 def delete_user(id: int, current_user: RequestModelEmp = Depends(get_current_user)):

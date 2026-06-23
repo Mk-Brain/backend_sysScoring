@@ -233,20 +233,23 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
                 best_distance = distance[0]
 
         print(f"Distance: {best_distance}")
-        match_found = best_distance < 0.5
+        #  Convertir explicitement en bool Python
+        match_found = bool(best_distance < 0.5)
+        print(best_distance)
         now = datetime.now().time()
 
         # 5. Archiver la photo — commun aux deux cas
         file = Path(IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / "img.png")
         if not file.exists():
             raise HTTPException(status_code=404, detail="Photo de pointage introuvable.")
-        new_name = file.rename(
-            str(IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{pointage.numero_pointage}.png")
-        )
-        img_path = str(new_name)
 
+        print(pointage)
         # 6. Mettre à jour le pointage
-        if pointage.numero_pointage == 0:
+        if pointage.numero_pointage == 0 and now <= HEURE_LIMITE_AVANT_ABSENCE:
+            new_name = file.rename(
+                str(IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{1}.png")
+            )
+            img_path = str(new_name)
             # ── 1er pointage — arrivée ──
             pointage.numero_pointage = 1
             pointage.heure_arrive = now
@@ -270,6 +273,10 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
             pointage.minutes_sup = 0
 
         elif pointage.numero_pointage == 1 and HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE < now <= HEURE_LIMITE_AVANT_ABSENCE:
+            new_name = file.rename(
+                str(IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{2}.png")
+            )
+            img_path = str(new_name)
             # ── 2ème pointage — départ ──
             pointage.numero_pointage = 2
             pointage.heure_depart = now
