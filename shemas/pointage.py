@@ -15,8 +15,8 @@ class ModelScoring(BaseModel):
     minutes_travail: int | None = None
     minutes_sup: int | None = None
     numero_pointage: int
-    distance_arrivee: int| None = None
-    distance_depart: int| None = None
+    distance_arrivee: float | None = None
+    distance_depart: float| None = None
     id_user: int
 
     class Config:

@@ -1,7 +1,7 @@
 import enum
 from datetime import date
 
-from sqlalchemy import Column, Date, ForeignKey, Integer, String, Time, Enum
+from sqlalchemy import Column, Date, ForeignKey, Integer, String, Time, Enum, Double
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
@@ -31,8 +31,8 @@ class Pointage(Base):
 
     numero_pointage = Column(Integer, default=0, nullable=False)
 
-    distance_arrivee = Column(Integer, default=1) #distance entre les visages
-    distance_depart = Column(Integer, default=1)
+    distance_arrivee = Column(Double, default=1) #distance entre les visages
+    distance_depart = Column(Double, default=1)
 
     status_arrivee = Column(
         Enum(ScoringState),

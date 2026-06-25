@@ -37,7 +37,7 @@ async def add_settings(settings : list[Setting], current_user: Employe = Depends
         update_cache_settings(db)
     return {"message" : "success"}
 
-"""@router.get("/get_settings", response_model=list[SettingResponsModel])
+@router.get("/get_setting_list", response_model=list[SettingResponsModel])
 async def get_settings(current_user: Employe = Depends(get_current_user)):
 
     if current_user.role != "admin":
@@ -46,7 +46,7 @@ async def get_settings(current_user: Employe = Depends(get_current_user)):
        
         settings = db.query(Parametre).all()
     
-    return settings"""
+    return settings
 
 @router.get("/get_settings")
 def get_settings_public(current_user: RequestModelEmp = Depends(get_current_user)):

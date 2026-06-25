@@ -80,7 +80,7 @@ crons = Crons(app, state_backend=backend)
 # ── Crons ──
 current_date = date.today()
 
-@crons.cron(expr="35 4 * * *", name="init scoring")
+@crons.cron(expr="20 10 * * *", name="init scoring")
 def init_scoring():
     with get_db() as db:
         return init_pointage(db=db)

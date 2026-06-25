@@ -187,19 +187,20 @@ def scan_qr(mat: str):
 
 
 
-HEURE_ARRIVEE = SettingApp.setting_cash["HEURE_ARRIVEE"]
-HEURE_DEPART = SettingApp.setting_cash["HEURE_DEPART"]
-HEURE_RETARD_TOLERE = SettingApp.setting_cash["HEURE_TOLEREE"]
-JOUNEE_TRAVAIL = SettingApp.setting_cash["JOUNEE_TRAVAIL"]
 
-HEURE_LIMITE = HEURE_ARRIVEE if HEURE_RETARD_TOLERE is None else HEURE_RETARD_TOLERE
-
-HEURE_LIMITE_AVANT_ABSENCE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_ABSENCE"]
-HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE"]
 
 
 @router.post("/pointer")
 def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
+    HEURE_ARRIVEE = SettingApp.setting_cash["HEURE_ARRIVEE"]
+    HEURE_DEPART = SettingApp.setting_cash["HEURE_DEPART"]
+    HEURE_RETARD_TOLERE = SettingApp.setting_cash["HEURE_TOLEREE"]
+    JOUNEE_TRAVAIL = SettingApp.setting_cash["JOUNEE_TRAVAIL"]
+
+    HEURE_LIMITE = HEURE_ARRIVEE if HEURE_RETARD_TOLERE is None else HEURE_RETARD_TOLERE
+
+    HEURE_LIMITE_AVANT_ABSENCE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_ABSENCE"]
+    HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE"]
 
     # 1. Capturer et encoder le visage
     picture_encode = None
@@ -255,7 +256,7 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
             pointage.heure_arrive = now
             pointage.photo_pointage_arrivee = img_path
             pointage.distance_arrivee = round(best_distance, 4)
-            pointage.heure_depart = HEURE_LIMITE_AVANT_ABSENCE
+            pointage.heure_depart = HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE
             pointage.status_depart = ScoringState.PRESENT
 
             # Statut arrivée selon reconnaissance
