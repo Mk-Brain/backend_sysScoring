@@ -68,7 +68,7 @@ def take_picture(mat: str) -> bool:
     On sauvegarde le frame complet (pas le crop) pour que
     face_recognition puisse faire sa propre détection avec plus de contexte.
     """
-    frame = VideoSetting.frame
+    frame = VideoSetting.frame.copy()
 
     if frame is None or frame.size == 0:
         return False

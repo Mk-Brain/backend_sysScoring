@@ -247,8 +247,8 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
         print(pointage)
         # 6. Mettre à jour le pointage
         if pointage.numero_pointage == 0 and now <= HEURE_LIMITE_AVANT_ABSENCE:
-            new_name = file.rename(
-                str(IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{1}.png")
+            new_name = file.replace(
+                IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{pointage.numero_pointage}.png"
             )
             img_path = str(new_name)
             # ── 1er pointage — arrivée ──
@@ -274,8 +274,8 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
             pointage.minutes_sup = 0
 
         elif pointage.numero_pointage == 1 and HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE < now <= HEURE_LIMITE_AVANT_ABSENCE:
-            new_name = file.rename(
-                str(IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{2}.png")
+            new_name = file.replace(
+                IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{pointage.numero_pointage}.png"
             )
             img_path = str(new_name)
             # ── 2ème pointage — départ ──
@@ -289,7 +289,7 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
             arrive = datetime.combine(date.today(), pointage.heure_arrive)
             depart = datetime.combine(date.today(), now)
             heure_travail = depart - arrive
-            heure_sup = heure_travail - JOUNEE_TRAVAIL
+            heure_sup = heure_travail - (datetime.combine(date.today(), JOUNEE_TRAVAIL) - datetime.combine(date.today(), time(hour=0,minute=0,second=0)))
 
             pointage.minutes_travail = int(heure_travail.total_seconds() / 60)
             pointage.minutes_sup = int(heure_sup.total_seconds() / 60) if heure_sup.total_seconds() > 0 else 0
