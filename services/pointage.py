@@ -61,7 +61,7 @@ def init_pointage(db: Session):
 
 IMG_DIR = Path.cwd().parent / "backend" / "img" 
 
-def take_picture(mat: str) -> bool:
+def take_picture(mat: str):
     """
     Capture le frame actuel, vérifie la présence d'un visage via DNN
     et sauvegarde le frame complet si un visage est détecté.
@@ -91,14 +91,6 @@ def take_picture(mat: str) -> bool:
 
     if not face_detected:
         return False
-
-    # Sauvegarder le frame original complet
-    save_path = IMG_DIR / mat / f"{datetime.now().date()}" / "img.png"
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    return cv2.imwrite(str(save_path), frame)
-
-
-def encoding(mat: str):
     """
     Encode le visage depuis la photo capturée.
     Utilise model='small' (5 points) au lieu de 'large' (128 points)
@@ -106,18 +98,14 @@ def encoding(mat: str):
     La conversion BGR->RGB est obligatoire car OpenCV lit en BGR
     et face_recognition attend du RGB.
     """
-    img_path = IMG_DIR / mat / f"{datetime.now().date()}" / "img.png"
+    save_path = IMG_DIR / mat / f"{datetime.now().date()}" / "img.png"
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    save = cv2.imwrite(str(save_path), frame)
 
-    if not img_path.exists():
-        raise HTTPException(status_code=404, detail="l'image capturée n'a pas été enregistrée")
-
-
-    img = cv2.imread(str(img_path))
-    if img is None:
-        raise HTTPException(status_code=404, detail="Impossible de lire l'image capturée")
-
+    if not save:
+        return False
     # BGR → RGB obligatoire pour face_recognition
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     # model="small" — cohérent avec get_user_encoding()
     encs = face_recognition.face_encodings(img_rgb, model="small")

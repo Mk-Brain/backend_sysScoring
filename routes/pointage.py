@@ -11,14 +11,13 @@ from fastapi.sse import EventSourceResponse
 from pyzbar.wrapper import ZBarSymbol
 from sqlalchemy.orm import joinedload
 
-from models.config import Parametre
 from models.statistique import Statistique
 from services.auth import get_current_user, verify_access_token
 from database.database import get_db
 from models.employe import Employe
 from models.pointages import Pointage, ScoringState
 from services.employe import get_user_encoding
-from services.pointage import take_picture, encoding, IMG_DIR
+from services.pointage import take_picture, IMG_DIR
 from shemas.employe import RequestModelEmp
 from shemas.pointage import ChangeStatusPointageRequest, ModelScoring
 from pyzbar.pyzbar import decode
@@ -203,9 +202,8 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
     HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE"]
 
     # 1. Capturer et encoder le visage
-    picture_encode = None
-    if take_picture(current_user.matricule):
-        picture_encode = encoding(current_user.matricule)
+
+    picture_encode = take_picture(current_user.matricule)
 
     if not picture_encode:
         raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image capturée.")
@@ -246,9 +244,9 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
 
         print(pointage)
         # 6. Mettre à jour le pointage
-        if pointage.numero_pointage == 0 and now <= HEURE_LIMITE_AVANT_ABSENCE:
+        if pointage.numero_pointage == 0 :
             new_name = file.replace(
-                IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{pointage.numero_pointage}.png"
+                IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{1}.png"
             )
             img_path = str(new_name)
             # ── 1er pointage — arrivée ──
@@ -273,9 +271,9 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
             pointage.minutes_travail = int(delta.total_seconds() / 60) if delta.total_seconds() > 0 else 0
             pointage.minutes_sup = 0
 
-        elif pointage.numero_pointage == 1 and HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE < now <= HEURE_LIMITE_AVANT_ABSENCE:
+        elif pointage.numero_pointage == 1 :
             new_name = file.replace(
-                IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{pointage.numero_pointage}.png"
+                IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{2}.png"
             )
             img_path = str(new_name)
             # ── 2ème pointage — départ ──

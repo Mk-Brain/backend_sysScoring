@@ -1,14 +1,17 @@
 import asyncio
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import AsyncIterable
 
+import time
 from fastapi import HTTPException, Form, Query
 
 from fastapi import APIRouter, Depends
 from fastapi.encoders import jsonable_encoder
 from fastapi.sse import EventSourceResponse
+
 
 from services.auth import get_current_user, verify_access_token
 from database.database import get_db
@@ -91,6 +94,7 @@ async def get_all_stream_req(token: str = Query(...)):
 """effectuer une demande d'inscription"""
 @router.post("/inscription", response_model=ResponseRequest)
 async def new_inscrition(dem: ModelRequest = Form(media_type="multipart/form-data")):
+    now = datetime.now().time()
     with get_db() as db:
         user = get_user_by_email(dem.email, db)
         if user:
@@ -113,6 +117,7 @@ async def new_inscrition(dem: ModelRequest = Form(media_type="multipart/form-dat
         photo=images_location,
         password=dem.password,
         poste=dem.poste,
+        hour_req=now
     )
     with get_db() as db:
         get_exist_dmd = select(
@@ -148,6 +153,7 @@ async def update_inscrition(
             .filter(DemandesInscription.id == int(dem.id_req))
             .first()
         )
+        dmd.hour_req = datetime.now().time()
         dmd.status = "pending"
         if dem.nom:
             dmd.nom = dem.nom
