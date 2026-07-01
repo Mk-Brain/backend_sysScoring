@@ -146,11 +146,7 @@ async def prodige_donnees_dashbord(token: str):
             yesterday = today - timedelta(days=1)
 
             # Correction de la syntaxe de week_start (il y avait une virgule traîner à la fin créant un tuple)
-            week_start = date(
-                today.year,
-                today.month,
-                today.day - calendar.weekday(today.year, today.month, today.day),
-            )
+            week_start = today - timedelta(days=calendar.weekday(today.year, today.month, today.day))
 
             # ===== 1. EFFECTIF & STATS COMPTEURS (Aujourd'hui et Hier) =====
             total_employes = db.query(Employe).count()
@@ -476,8 +472,8 @@ def nb_jours_total(date_deb: date, date_fin: date) -> int:
 async def prodige_donnees_rapport(
     token: str, periode: str, date_deb: date, date_fin: date
 ):
-    date_deb = date_deb + timedelta(days=1)
-    date_fin = date_fin + timedelta(days=1)
+    date_deb = date_deb
+    date_fin = date_fin
     nb_jours = nb_jours_ouvrables(date_deb, date_fin)
 
     while True:
@@ -724,14 +720,15 @@ async def prodige_donnees_rapport(
 
 
 
+
+
 def nb_jours_ouvrables(date_deb, date_fin):
-    """Compte les jours du lundi au vendredi entre deux dates"""
-    count = 0
-    while date_deb <= date_fin:
-        if date_deb.weekday() < 5:  # 0=Lundi, 4=Vendredi
-            count += 1
-        date_deb += timedelta(days=1)
-    return count
+    """Compte les jours ouvrables (lundi-vendredi) entre deux dates incluses"""
+    return sum(
+        1 for i in range((date_fin - date_deb).days + 1)
+        if (date_deb + timedelta(days=i)).weekday() < 5
+    )
+
 
 @router.get("/rapport")
 async def get_repport_stream(

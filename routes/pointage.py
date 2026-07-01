@@ -59,8 +59,6 @@ async def prodige_donnees_pointages(token: str):
 
 
 """Récupérer tous les pointages"""
-
-
 @router.get("/pointages")
 async def get_all_stream_req(token: str = Query(...)):
     user = verify_access_token(token)
@@ -72,9 +70,8 @@ async def get_all_stream_req(token: str = Query(...)):
     return EventSourceResponse(prodige_donnees_pointages(token))
 
 
+
 """Récupérer tous les pointages d'un user specifique"""
-
-
 @router.get("/my_scoring", response_model=list[ModelScoring])
 def get_all_pointages(current_user: RequestModelEmp | None = Depends(get_current_user)):
     with get_db() as db:
@@ -85,14 +82,14 @@ def get_all_pointages(current_user: RequestModelEmp | None = Depends(get_current
 
 
 """Changer le status d'un pointages"""
-
-
 @router.put("/{id}/change_status")
 def change_pointage_status(
     id: int,
     body: ChangeStatusPointageRequest,
     current_user: RequestModelEmp = Depends(get_current_user),
 ):
+    HEURE_ARRIVEE = SettingApp.setting_cash["HEURE_ARRIVEE"]
+    HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE"]
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="You can not access from this route")
 
@@ -101,19 +98,35 @@ def change_pointage_status(
         if not pointage:
             raise HTTPException(status_code=404, detail="Pointage not found")
 
-        print(f">>> numero_pointage={body.numero_pointage!r} status={body.status!r}")  # debug
-
         if body.numero_pointage == 1:
             pointage.status_arrivee = body.status
+
+            #  Si on force ABSENT sur l'arrivée → tout réinitialiser
+            if body.status == ScoringState.ABSENT:
+                pointage.heure_arrive = None
+                pointage.heure_depart = None
+                pointage.distance_arrivee = 1
+                pointage.distance_depart = 1
+                pointage.minutes_travail = 0
+                pointage.minutes_sup = 0
+                pointage.numero_pointage = 0
+                pointage.status_depart = ScoringState.ABSENT
+
         elif body.numero_pointage == 2:
             pointage.status_depart = body.status
-        else:
-            print(">>> AUCUNE branche exécutée — numero_pointage invalide")
+            #  Si on force ABSENT sur le départ → effacer les données de départ
+            if body.status == ScoringState.ABSENT:
+                pointage.numero_pointage = 1  # retour à l'état après 1er pointage
+                pointage.heure_arrive =  HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE
+                fin = datetime.combine(date.today(), HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE)
+                last_start = pointage.heure_arrive if pointage.heure_arrive is not None else HEURE_ARRIVEE
+                arrivee = datetime.combine(date.today(), last_start)
 
-        db.add(pointage)
+                delta = fin - arrivee
+                pointage.minutes_travail = int(delta.total_seconds() / 60) if delta.total_seconds() > 0 else 0
+
         db.commit()
         db.refresh(pointage)
-        print(f">>> après commit: arrivee={pointage.status_arrivee} depart={pointage.status_depart}")
 
     return {"message": "Statut du pointage mis à jour"}
 
@@ -188,17 +201,17 @@ def scan_qr(mat: str):
 
 
 
-
+"""pointer sa présence"""
 @router.post("/pointer")
 def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
     HEURE_ARRIVEE = SettingApp.setting_cash["HEURE_ARRIVEE"]
-    HEURE_DEPART = SettingApp.setting_cash["HEURE_DEPART"]
+    #HEURE_DEPART = SettingApp.setting_cash["HEURE_DEPART"]
     HEURE_RETARD_TOLERE = SettingApp.setting_cash["HEURE_TOLEREE"]
     JOUNEE_TRAVAIL = SettingApp.setting_cash["JOUNEE_TRAVAIL"]
 
     HEURE_LIMITE = HEURE_ARRIVEE if HEURE_RETARD_TOLERE is None else HEURE_RETARD_TOLERE
 
-    HEURE_LIMITE_AVANT_ABSENCE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_ABSENCE"]
+    #HEURE_LIMITE_AVANT_ABSENCE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_ABSENCE"]
     HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE"]
 
     # 1. Capturer et encoder le visage
@@ -283,12 +296,10 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
             pointage.distance_depart = round(best_distance, 4)
             pointage.status_depart = ScoringState.PRESENT if match_found else ScoringState.PENDING
 
-
             arrive = datetime.combine(date.today(), pointage.heure_arrive)
             depart = datetime.combine(date.today(), now)
             heure_travail = depart - arrive
-            heure_sup = heure_travail - (datetime.combine(date.today(), JOUNEE_TRAVAIL) - datetime.combine(date.today(), time(hour=0,minute=0,second=0)))
-
+            heure_sup = heure_travail - timedelta(hours=JOUNEE_TRAVAIL.hour,minutes=JOUNEE_TRAVAIL.minute,seconds=JOUNEE_TRAVAIL.second)
             pointage.minutes_travail = int(heure_travail.total_seconds() / 60)
             pointage.minutes_sup = int(heure_sup.total_seconds() / 60) if heure_sup.total_seconds() > 0 else 0
 

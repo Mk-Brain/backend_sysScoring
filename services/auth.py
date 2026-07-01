@@ -99,6 +99,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         user = get_user_by_email(email, db)
     if user is None:
         raise credentials_exception
+    if user.status != "actif":
+        raise HTTPException(status_code=403, detail="Compte utilisateur inactif")
     return user
 
 def verify_token(refresh_token: str):

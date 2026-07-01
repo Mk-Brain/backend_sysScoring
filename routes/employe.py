@@ -209,6 +209,13 @@ async def picture(name: str):
 
     return FileResponse(file_path)
 
+@router.get("/scoring_picture", response_class=FileResponse)
+async def scoring_picture(name: str):
+    file = Path(name)
+    if not file.exists() or not file.is_file():
+        raise HTTPException(status_code=404, detail="Image non trouvée")
+
+    return FileResponse(file)
 @router.patch("/{user_id}/status")
 def update_status(
     user_id: int,

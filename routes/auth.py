@@ -34,7 +34,8 @@ async def login_for_access_token( form_data: OAuth2PasswordRequestForm = Depends
 
     if not user:
         raise HTTPException(status_code=400, detail="Invalid username or password")
-
+    if user.status != "actif":
+        raise HTTPException(status_code=403, detail="Compte utilisateur inactif")
     # À faire: créer le token JWT
     access_token = create_access_token(data={"sub": user.email},
                                        expires_delta=timedelta(minutes=expire_access))
@@ -58,7 +59,8 @@ def refresh_token(payload: RefreshTokenRequest, response: Response):
     user: Employe | None = verify_token(payload.refresh_token)
     if user is None:
         raise HTTPException(status_code=400, detail="Invalid refresh token")
-
+    if user.status != "actif":
+        raise HTTPException(status_code=403, detail="Compte utilisateur inactif")
     new_access_token = create_access_token({"sub": user.email})
     #new_refresh_token = create_refresh_token(data={'sub': user.email}, expires_delta=timedelta(days=expire_refresh))
 
