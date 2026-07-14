@@ -35,7 +35,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent
 modelFile = str(BASE_DIR / "assets" / "res10_300x300_ssd_iter_140000_fp16.caffemodel")
 configFile = str(BASE_DIR / "assets" / "deploy.prototxt")
-FaceRecognitionSetting.net = cv2.dnn.readNetFromCaffe(configFile, modelFile)
+#FaceRecognitionSetting.net = cv2.dnn.readNetFromCaffe(configFile, modelFile)
 
 
 
