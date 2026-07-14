@@ -52,9 +52,9 @@ def start_read():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. Démarrer la caméra
-    thread = threading.Thread(target=start_read, daemon=True)
+    """thread = threading.Thread(target=start_read, daemon=True)
     thread.start()
-    print("Caméra démarrée")
+    print("Caméra démarrée")"""
 
     # 2. Précharger le cache des encodages
     with get_db() as db:

@@ -14,6 +14,9 @@ from models.pointages import Pointage, ScoringState
 from utils.global_var import VideoSetting
 
 from pathlib import Path
+from pyzbar.pyzbar import decode
+from pyzbar.wrapper import ZBarSymbol
+import time as tm
 
 BASE_DIR = Path(__file__).parent
 
@@ -68,7 +71,10 @@ def take_picture(mat: str):
     On sauvegarde le frame complet (pas le crop) pour que
     face_recognition puisse faire sa propre détection avec plus de contexte.
     """
-    frame = VideoSetting.frame.copy()
+    url = "http://localhost:8000/video"
+    cap = cv2.VideoCapture(url)
+
+    ret, frame = cap.read()
 
     if frame is None or frame.size == 0:
         return False
@@ -109,4 +115,62 @@ def take_picture(mat: str):
 
     # model="small" — cohérent avec get_user_encoding()
     encs = face_recognition.face_encodings(img_rgb, model="small")
+    cap.release()
     return encs if encs else None
+
+
+def readqr(mat: str):
+    scan_result = None
+    timeout = 10
+    start_time = tm.time()
+    today = date.today().strftime("%d/%m/%Y")
+    print(f"Début du scan QR code... {today}")
+
+    url = "http://localhost:8000/video"
+    cap = cv2.VideoCapture(url)
+
+    while (tm.time() - start_time) < timeout:
+        # Vérifie l'état du flux
+        if not cap.isOpened():
+            print("Erreur : Impossible d'ouvrir le flux vidéo")
+            tm.sleep(0.05)
+            continue
+
+        ret, frame = cap.read()
+
+        if not  ret:
+            print("Erreur : Impossible d'ouvrir le flux vidéo")
+            tm.sleep(0.05)
+            continue
+
+        if not isinstance(frame, np.ndarray):
+            print(f"frame n'est pas un numpy array : {type(frame)}")
+            tm.sleep(0.05)
+            continue
+
+        decoded_info = decode(frame, symbols=[ZBarSymbol.QRCODE])
+
+        if not decoded_info:
+            tm.sleep(0.05)
+            continue
+
+        for qrcode in decoded_info:
+            decoded_text = qrcode.data.decode("utf-8")
+            print(f"QR détecté : {decoded_text}")
+
+            if mat in decoded_text and today in decoded_text:
+                scan_result = decoded_text
+                print("OK")
+                break
+
+        if scan_result:
+            break
+
+        tm.sleep(0.05)
+
+    if not scan_result:
+        raise HTTPException(status_code=400, detail="Aucun QR code détecté")
+
+    qr = str(scan_result).split("|")[0]
+    cap.release()
+    return qr

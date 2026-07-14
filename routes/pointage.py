@@ -8,7 +8,6 @@ from fastapi import APIRouter, Query
 import cv2
 from fastapi.sse import EventSourceResponse
 
-from pyzbar.wrapper import ZBarSymbol
 from sqlalchemy.orm import joinedload
 
 from models.statistique import Statistique
@@ -17,10 +16,10 @@ from database.database import get_db
 from models.employe import Employe
 from models.pointages import Pointage, ScoringState
 from services.employe import get_user_encoding
-from services.pointage import take_picture, IMG_DIR
+from services.pointage import take_picture, IMG_DIR, readqr
 from shemas.employe import RequestModelEmp
 from shemas.pointage import ChangeStatusPointageRequest, ModelScoring
-from pyzbar.pyzbar import decode
+
 
 from utils.global_var import SettingApp, VideoSetting
 
@@ -31,7 +30,7 @@ from datetime import (
     timedelta,
 ) 
 
-import time as tm
+
 import face_recognition
 from fastapi import HTTPException, Depends
 
@@ -135,58 +134,10 @@ def change_pointage_status(
 """lire le qr code"""
 @router.get("/scan_qr")
 def scan_qr(mat: str):
-    scan_result = None
-    timeout = 10
-    start_time = tm.time()
-    today = date.today().strftime("%d/%m/%Y")
-    print(f"Début du scan QR code... {today}")
+    scan_result = readqr(mat)
 
-    while (tm.time() - start_time) < timeout:
-        # Vérifie l'état du flux
-        if not VideoSetting.flag:
-            print("flux non démarré ?")
-            tm.sleep(0.05)
-            break
-
-        if VideoSetting.frame is None:
-            print("pas de frame disponible")
-            tm.sleep(0.05)
-            break
-
-        # Vérifie que c'est bien un numpy array
-        frame = VideoSetting.frame  # Copie locale pour éviter les race conditions
-        if not isinstance(frame, np.ndarray):
-            print(f"frame n'est pas un numpy array : {type(frame)}")
-            tm.sleep(0.05)
-            continue
-
-        decoded_info = decode(frame, symbols=[ZBarSymbol.QRCODE])
-
-        if not decoded_info:
-            tm.sleep(0.05)
-            continue
-
-        for qrcode in decoded_info:
-            decoded_text = qrcode.data.decode("utf-8")
-            print(f"QR détecté : {decoded_text}")
-
-            if mat in decoded_text and today in decoded_text:
-                scan_result = decoded_text
-                print("OK")
-                break
-
-        if scan_result:
-            break
-
-        tm.sleep(0.05)
-
-    if not scan_result:
-        raise HTTPException(status_code=400, detail="Aucun QR code détecté")
-
-    qr = str(scan_result).split("|")[0]
-    print(qr)
     with get_db() as db:
-        emp = db.query(Employe).filter(Employe.qrCode == qr).first()
+        emp = db.query(Employe).filter(Employe.qrCode == scan_result).first()
 
     if not emp:
         raise HTTPException(
