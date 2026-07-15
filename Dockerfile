@@ -3,17 +3,12 @@ FROM python:3.11-slim as builder
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install build dependencies - minimal set
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     build-essential \
-    cmake \
-    gcc \
-    g++ \
-    pkg-config \
-    libopenblas-dev \
-    liblapack-dev \
-    libatlas-base-dev \
-    && rm -rf /var/lib/apt/lists/*
+    pkg-config && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
 COPY requirements.txt .
@@ -33,18 +28,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install only runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install only runtime dependencies - remove unnecessary build tools
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     libgl1 \
     libsm6 \
     libxext6 \
     libxrender-dev \
-    libzbar0 \
-    libopenblas0 \
-    liblapack3 \
-    libatlas3-base \
-    && rm -rf /var/lib/apt/lists/*
+    libzbar0 && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy Python dependencies from builder
 COPY --from=builder /install /install
