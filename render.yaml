@@ -1,18 +1,46 @@
 services:
   - type: web
-    name: pointage-api
-    env: python
-    region: frankfurt  # ✅ plus proche de l'Afrique
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    name: pointage-system
+    runtime: docker
+    plan: standard
+    region: oregon
+    
+    # Build configuration
+    dockerfilePath: ./Dockerfile
+    
+    # Environment variables (set these in Render Dashboard)
     envVars:
-      - key: DATABASE_URL
+      - key: PORT
+        value: "10000"
+      - key: DATABASE_HOST
+        sync: false  # Set in Render environment
+      - key: DATABASE_ROOT
         sync: false
-      - key: SECRET_KEY
+      - key: DATABASE_PASSWORD
         sync: false
+      - key: DATABASE_NAME
+        sync: false
+      - key: ALGORITHM
+        value: "HS256"
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        sync: false
+        value: "30"
       - key: REFRESH_TOKEN_EXPIRE_DAYS
-        sync: false
-    runtime: python
+        value: "7"
+      - key: SECRET_KEY
+        sync: false  # Set a strong secret in Render environment
+      - key: ALLOWED_ORIGINS
+        value: "https://your-frontend-domain.com,https://www.your-frontend-domain.com"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    
+    # Health check
+    healthCheckPath: /health
+    
+    # Build command (if needed)
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    
+    # Start command
+    startCommand: bash start.sh
+    
+    # Autoscaling (optional)
+    autoDeploy: true

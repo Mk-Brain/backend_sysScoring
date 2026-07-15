@@ -1,5 +1,6 @@
 import threading
 import calendar
+import os
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
@@ -35,6 +36,14 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent
 modelFile = str(BASE_DIR / "assets" / "res10_300x300_ssd_iter_140000_fp16.caffemodel")
 configFile = str(BASE_DIR / "assets" / "deploy.prototxt")
+
+# Verify model files exist on startup
+if not os.path.exists(modelFile):
+    raise FileNotFoundError(f"Face recognition model file not found: {modelFile}")
+if not os.path.exists(configFile):
+    raise FileNotFoundError(f"Face recognition config file not found: {configFile}")
+
+print("Face recognition models verified at startup")
 #FaceRecognitionSetting.net = cv2.dnn.readNetFromCaffe(configFile, modelFile)
 
 
@@ -143,14 +152,16 @@ def clear_():
 
 
 
-origins = [
-    "http://localhost:5173",
-    "http://localhost",
-    "http://localhost:8080",
-]
+# CORS configuration - load allowed origins from environment
+# Fallback to localhost origins for development
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://localhost:8080,http://localhost"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[origin.strip() for origin in allowed_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -171,4 +182,3 @@ def home():
 @app.get('/health')
 def health_check():
     return {"status": "OK"}
-

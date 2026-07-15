@@ -1,0 +1,36 @@
+.pytest_cache
+.env
+.env.local
+*.pyc
+__pycache__/
+.venv/
+env/
+venv/
+
+# Python
+*.py[cod]
+*$py.class
+*.so
+.Python
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Images captured
+visage.jpg
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Upload folders
+uploads/
+test_foction/
+img/
