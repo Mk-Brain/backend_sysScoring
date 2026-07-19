@@ -40,7 +40,7 @@ class ResponseRequest(BaseModel):
     poste : str | None = None
     status: str | None = None
     comments: str | None = None
-    date_req: date
+    date_req: date 
     hour_req:  time
 
     class Config:

@@ -14,7 +14,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 
-from services.employe import get_user_by_email
+from models.employe import Employe
 
 load_dotenv()
 
@@ -35,6 +35,18 @@ def verify_password(plain_password, ashed_password):
 
 def get_password_hash(password: str):
     return pwd_context.hash(password)
+
+def get_user_by_id(id: int, db = Session):
+    user_in_db = db.query(Employe).get(id)
+    return user_in_db
+
+def get_user_by_email(email: str, db: Session):
+    user_in_db = db.query(Employe).filter(Employe.email == email).first()
+    return user_in_db
+
+def get_user_by_register_number(register_number: str, db: Session):
+    user_in_db = db.query(Employe).filter(Employe.matricule == register_number).first()
+    return user_in_db
 
 """Check if username and password are correct."""
 def authenticate_user( username: str, password: str, db: Session):
@@ -137,5 +149,23 @@ def verify_access_token(token):
         user = get_user_by_email(email, db)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    return user
+
+
+#pour les connexion sse
+def verify_access_token_stream(token):
+    try:
+        payload = jwt.decode(token, key, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+
+        if email is None:
+            return None
+
+    except JWTError:
+        return None
+
+    with get_db() as db:
+        user = get_user_by_email(email, db)
 
     return user

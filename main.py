@@ -1,19 +1,16 @@
-import threading
-import calendar
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 
 import cv2
-from apscheduler.triggers import cron
+
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import  FastAPI
 from fastapi_crons import Crons
 from fastapi.middleware.cors import CORSMiddleware
 
 from database.database import backend, get_db
-from models.config import Parametre
-from models.employe import Employe
+
 from routes.employe import router as employe_router
 from routes.pointage import router as pointage_router
 from routes.demandes import router as demande_router
@@ -23,8 +20,6 @@ from routes.settings import router as settings_router
 from services.Setting import get_settings
 from services.employe import preload_cache, clear_cache
 from services.pointage import init_pointage
-from services.statitiques import (init_stats_week, init_stats_month,
-                                   init_stats_year, traitement_statistiques_journalieres)
 
 from utils.global_var import VideoSetting, FaceRecognitionSetting
 
@@ -56,9 +51,12 @@ async def lifespan(app: FastAPI):
     thread.start()
     print("Caméra démarrée")"""
 
-    # 2. Précharger le cache des encodages
     with get_db() as db:
+        #  Précharger le cache des encodages
         preload_cache(db)
+        # 2. initialiser les pointages
+        init_pointage(db=db)
+        # 2. Précharger les paramètres
         get_settings(db)
 
     print("Application prête")
@@ -80,60 +78,10 @@ crons = Crons(app, state_backend=backend)
 # ── Crons ──
 current_date = date.today()
 
-@crons.cron(expr="09 11 * * *", name="init scoring")
+@crons.cron(expr="0 0 * * *", name="init scoring")
 def init_scoring():
     with get_db() as db:
         return init_pointage(db=db)
-
-#@crons.cron(expr="14 * * * 7", name="init week stats")
-def init_week_stats():
-    with get_db() as db:
-        id_users = db.query(Employe.id).all()
-        for id_user in id_users:
-            init_stats_week(
-                db=db,
-                employe_id=id_user[0],
-                date_debut=date(current_date.year, current_date.month,
-                                current_date.day - calendar.weekday(current_date.year, current_date.month, current_date.day)),
-                date_fin=date(current_date.year, current_date.month,
-                              current_date.day + (6 - calendar.weekday(current_date.year, current_date.month, current_date.day)))
-            )
-            db.commit()
-
-#@crons.cron(expr="20 * * * *", name="init month stats")
-def init_month_stats():
-    with get_db() as db:
-        id_users = db.query(Employe.id).all()
-        for id_user in id_users:
-            init_stats_month(
-                db=db,
-                employe_id=id_user[0],
-                date_debut=date(current_date.year, current_date.month, 1),
-                date_fin=date(current_date.year, current_date.month,
-                              calendar.monthrange(current_date.year, current_date.month)[1])
-            )
-            db.commit()
-
-#@crons.cron(expr="20 * * * *", name="init year stats")
-def init_year_stats():
-    with get_db() as db:
-        id_users = db.query(Employe.id).all()
-        for id_user in id_users:
-            init_stats_year(
-                db=db,
-                employe_id=id_user[0],
-                date_debut=date(year=current_date.year, month=1, day=1),
-                date_fin=date(year=current_date.year, month=12, day=31)
-            )
-            db.commit()
-
-#@crons.cron(expr="*/2 * * * *", name="update statistiques")
-def lancer_mise_a_jour_statistiques():
-    with get_db() as db:
-        try:
-            traitement_statistiques_journalieres(db)
-        finally:
-            db.close()
 
 @crons.cron(expr="0 0 * * *", name="clear cache")
 def clear_():
@@ -145,8 +93,6 @@ def clear_():
 
 origins = [
     "http://localhost:5173",
-    "http://localhost",
-    "http://localhost:8080",
 ]
 app.add_middleware(
     CORSMiddleware,
