@@ -1,5 +1,3 @@
-import asyncio
-import json
 from pathlib import Path
 import shutil
 
@@ -7,15 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Form
 from fastapi.sse import EventSourceResponse
 from sqlalchemy import select, exists
 
- # removed import of UPLOAD_DIR from routes.demandes to avoid redeclaration / circular import
-from services.auth import get_current_user, get_password_hash, get_user_by_email, verify_access_token
+from services.auth import get_current_user, get_password_hash, verify_access_token, get_user_by_id
 from database.database import  get_db
 from models.demandes import DemandesInscription
 from models.employe import Employe
 from models.pointages import Pointage
 from models.statistique import Statistique
 from services.demande import verify_picture
-from services.employe import get_user_by_id
+from services.employe import  prodige_donnees_emp
 from services.pointage import IMG_DIR
 from shemas.employe import ResponseModelEmp, RequestModelEmp, ValidatedInscriptionModelRequest, RequestModelNewEmp, \
     UpdateStatusRequest
@@ -27,25 +24,7 @@ router = APIRouter(
 )
 
 
-async def prodige_donnees(token: str):
-    while True:
-        # Vérifier le token à chaque itération
-        user = verify_access_token(token)
 
-        if user is None:
-            # Envoyer un événement spécial au lieu de crasher
-            yield f"event: token_expired\ndata: {{}}\n\n"
-            break  # Arrêter le générateur
-
-        with get_db() as db:
-            donnees = db.query(Employe).all()
-            payload = [
-                ResponseModelEmp.model_validate(d).model_dump(mode="json")
-                for d in donnees
-            ]
-
-        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(2)
 
 """Récupérer tous les employés"""
 @router.get("/users")
@@ -56,7 +35,7 @@ async def get_all_stream_user(token: str = Query(...)):
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Accès refusé")
 
-    return EventSourceResponse(prodige_donnees(token))
+    return EventSourceResponse(prodige_donnees_emp(token))
 
 
 
@@ -216,6 +195,8 @@ async def scoring_picture(name: str):
         raise HTTPException(status_code=404, detail="Image non trouvée")
 
     return FileResponse(file)
+
+
 @router.patch("/{user_id}/status")
 def update_status(
     user_id: int,

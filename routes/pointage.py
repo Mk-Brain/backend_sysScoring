@@ -1,14 +1,9 @@
-import asyncio
-import json
 import shutil
+from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-from fastapi import APIRouter, Query
-import cv2
+from fastapi import HTTPException, Depends, APIRouter, Query
 from fastapi.sse import EventSourceResponse
-
-from pyzbar.wrapper import ZBarSymbol
 from sqlalchemy.orm import joinedload
 
 from models.statistique import Statistique
@@ -17,50 +12,18 @@ from database.database import get_db
 from models.employe import Employe
 from models.pointages import Pointage, ScoringState
 from services.employe import get_user_encoding
-from services.pointage import take_picture, IMG_DIR
+from services.pointage import IMG_DIR, traiter_premier_pointage, traiter_deuxieme_pointage, archiver_photo, \
+    get_or_create_pointage, calculer_match, take_picture, readqr, appliquer_changement_statut, prodige_donnees_pointages
 from shemas.employe import RequestModelEmp
 from shemas.pointage import ChangeStatusPointageRequest, ModelScoring
-from pyzbar.pyzbar import decode
-
-from utils.global_var import SettingApp, VideoSetting
-
-from datetime import (
-    date,
-    datetime,
-    time,
-    timedelta,
-) 
-
-import time as tm
-import face_recognition
-from fastapi import HTTPException, Depends
+from utils.global_var import SettingApp
 
 router = APIRouter(prefix="/pointage", tags=["pointage"])
 
 
-async def prodige_donnees_pointages(token: str):
-    while True:
-        # Vérifier le token à chaque itération
-        user = verify_access_token(token)
-
-        if user is None:
-            #  Envoyer un événement spécial au lieu de crasher
-            yield f"event: token_expired\ndata: {{}}\n\n"
-            break  # Arrêter le générateur
-
-        with get_db() as db:
-            donnees = db.query(Pointage).options(joinedload(Pointage.users)).all()
-            payload = [
-                ModelScoring.model_validate(d).model_dump(mode="json") for d in donnees
-            ]
-
-        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(2)
-
-
 """Récupérer tous les pointages"""
 @router.get("/pointages")
-async def get_all_stream_req(token: str = Query(...)):
+async def get_all_stream_req(token: str = Query()):
     user = verify_access_token(token)
     if user is None:
         raise HTTPException(status_code=401, detail="Token invalide")
@@ -81,112 +44,47 @@ def get_all_pointages(current_user: RequestModelEmp | None = Depends(get_current
         return pointages
 
 
-"""Changer le status d'un pointages"""
+"""modifier le status d'un pointage"""
 @router.put("/{id}/change_status")
 def change_pointage_status(
     id: int,
     body: ChangeStatusPointageRequest,
     current_user: RequestModelEmp = Depends(get_current_user),
 ):
-    HEURE_ARRIVEE = SettingApp.setting_cash["HEURE_ARRIVEE"]
-    HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE"]
+    """
+    Permet à l'admin de modifier manuellement le statut d'un pointage.
+    Met à jour les champs calculés en conséquence.
+    """
     if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="You can not access from this route")
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+    settings = {
+        "HEURE_ARRIVEE": SettingApp.setting_cash["HEURE_ARRIVEE"],
+        "HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE": SettingApp.setting_cash["HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE"],
+    }
 
     with get_db() as db:
         pointage = db.query(Pointage).filter(Pointage.id == id).first()
         if not pointage:
-            raise HTTPException(status_code=404, detail="Pointage not found")
+            raise HTTPException(status_code=404, detail="Pointage introuvable")
 
-        if body.numero_pointage == 1:
-            pointage.status_arrivee = body.status
-
-            #  Si on force ABSENT sur l'arrivée → tout réinitialiser
-            if body.status == ScoringState.ABSENT:
-                pointage.heure_arrive = None
-                pointage.heure_depart = None
-                pointage.distance_arrivee = 1
-                pointage.distance_depart = 1
-                pointage.minutes_travail = 0
-                pointage.minutes_sup = 0
-                pointage.numero_pointage = 0
-                pointage.status_depart = ScoringState.ABSENT
-
-        elif body.numero_pointage == 2:
-            pointage.status_depart = body.status
-            #  Si on force ABSENT sur le départ → effacer les données de départ
-            if body.status == ScoringState.ABSENT:
-                pointage.numero_pointage = 1  # retour à l'état après 1er pointage
-                pointage.heure_arrive =  HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE
-                fin = datetime.combine(date.today(), HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE)
-                last_start = pointage.heure_arrive if pointage.heure_arrive is not None else HEURE_ARRIVEE
-                arrivee = datetime.combine(date.today(), last_start)
-
-                delta = fin - arrivee
-                pointage.minutes_travail = int(delta.total_seconds() / 60) if delta.total_seconds() > 0 else 0
+        appliquer_changement_statut(pointage, body, settings)
 
         db.commit()
         db.refresh(pointage)
 
-    return {"message": "Statut du pointage mis à jour"}
+    return {"message": "Statut mis à jour avec succès"}
+
 
 
 
 """lire le qr code"""
 @router.get("/scan_qr")
 def scan_qr(mat: str):
-    scan_result = None
-    timeout = 10
-    start_time = tm.time()
-    today = date.today().strftime("%d/%m/%Y")
-    print(f"Début du scan QR code... {today}")
+    scan_result = readqr(mat)
 
-    while (tm.time() - start_time) < timeout:
-        # Vérifie l'état du flux
-        if not VideoSetting.flag:
-            print("flux non démarré ?")
-            tm.sleep(0.05)
-            break
-
-        if VideoSetting.frame is None:
-            print("pas de frame disponible")
-            tm.sleep(0.05)
-            break
-
-        # Vérifie que c'est bien un numpy array
-        frame = VideoSetting.frame  # Copie locale pour éviter les race conditions
-        if not isinstance(frame, np.ndarray):
-            print(f"frame n'est pas un numpy array : {type(frame)}")
-            tm.sleep(0.05)
-            continue
-
-        decoded_info = decode(frame, symbols=[ZBarSymbol.QRCODE])
-
-        if not decoded_info:
-            tm.sleep(0.05)
-            continue
-
-        for qrcode in decoded_info:
-            decoded_text = qrcode.data.decode("utf-8")
-            print(f"QR détecté : {decoded_text}")
-
-            if mat in decoded_text and today in decoded_text:
-                scan_result = decoded_text
-                print("OK")
-                break
-
-        if scan_result:
-            break
-
-        tm.sleep(0.05)
-
-    if not scan_result:
-        raise HTTPException(status_code=400, detail="Aucun QR code détecté")
-
-    qr = str(scan_result).split("|")[0]
-    print(qr)
     with get_db() as db:
-        emp = db.query(Employe).filter(Employe.qrCode == qr).first()
+        emp = db.query(Employe).filter(Employe.qrCode == scan_result).first()
 
     if not emp:
         raise HTTPException(
@@ -204,104 +102,52 @@ def scan_qr(mat: str):
 """pointer sa présence"""
 @router.post("/pointer")
 def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
-    HEURE_ARRIVEE = SettingApp.setting_cash["HEURE_ARRIVEE"]
-    #HEURE_DEPART = SettingApp.setting_cash["HEURE_DEPART"]
-    HEURE_RETARD_TOLERE = SettingApp.setting_cash["HEURE_TOLEREE"]
-    JOUNEE_TRAVAIL = SettingApp.setting_cash["JOUNEE_TRAVAIL"]
+    """
+    Endpoint de pointage — orchestre les différentes étapes :
+    1. Capture et encodage du visage
+    2. Comparaison avec la référence
+    3. Archivage de la photo
+    4. Mise à jour du pointage
+    """
 
-    HEURE_LIMITE = HEURE_ARRIVEE if HEURE_RETARD_TOLERE is None else HEURE_RETARD_TOLERE
+    # ── Récupérer les paramètres ──
+    settings = {
+        "HEURE_LIMITE": (
+            SettingApp.setting_cash["HEURE_ARRIVEE"]
+            if SettingApp.setting_cash["HEURE_TOLEREE"] is None
+            else SettingApp.setting_cash["HEURE_TOLEREE"]
+        ),
+        "JOUNEE_TRAVAIL": SettingApp.setting_cash["JOUNEE_TRAVAIL"],
+        "HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE": SettingApp.setting_cash["HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE"],
+    }
 
-    #HEURE_LIMITE_AVANT_ABSENCE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_ABSENCE"]
-    HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE = SettingApp.setting_cash["HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE"]
-
-    # 1. Capturer et encoder le visage
-
+    # ── Étape 1 : Capturer et encoder le visage ──
     picture_encode = take_picture(current_user.matricule)
-
     if not picture_encode:
         raise HTTPException(status_code=400, detail="Aucun visage détecté dans l'image capturée.")
 
-    # 2. Récupérer l'encodage de référence depuis le cache
+    # ── Étape 2 : Récupérer l'encodage de référence ──
     user_encode = get_user_encoding(current_user.id, current_user.photo)
     if user_encode is None:
         raise HTTPException(status_code=400, detail="Aucun visage détecté dans la photo de référence.")
 
+    # ── Étape 3 : Comparer les visages ──
+    match_found, best_distance = calculer_match(picture_encode, user_encode)
+    now = datetime.now().time()
+
     with get_db() as db:
-        # 3. Récupérer le pointage du jour
-        pointage = db.query(Pointage).filter(
-            Pointage.id_user == current_user.id,
-            Pointage.date_day == date.today()
-        ).first()
+        # ── Étape 4 : Récupérer ou créer le pointage ──
+        pointage = get_or_create_pointage(db, current_user.id)
 
-        if not pointage:
-            raise HTTPException(status_code=404,
-                                detail="Pointage non trouvé pour aujourd'hui. Contactez l'administrateur.")
+        # ── Étape 5 : Archiver la photo ──
+        numero_photo = 1 if pointage.numero_pointage == 0 else 2
+        img_path = archiver_photo(current_user.matricule, numero_photo)
 
-        # 4. Comparer les visages
-        best_distance = 1.0
-        for detected_face_encoding in picture_encode:
-            distance = face_recognition.face_distance([user_encode], detected_face_encoding)
-            if distance[0] < best_distance:
-                best_distance = distance[0]
-
-        print(f"Distance: {best_distance}")
-        #  Convertir explicitement en bool Python
-        match_found = bool(best_distance < 0.5)
-        print(best_distance)
-        now = datetime.now().time()
-
-        # 5. Archiver la photo — commun aux deux cas
-        file = Path(IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / "img.png")
-        if not file.exists():
-            raise HTTPException(status_code=404, detail="Photo de pointage introuvable.")
-
-        print(pointage)
-        # 6. Mettre à jour le pointage
-        if pointage.numero_pointage == 0 :
-            new_name = file.replace(
-                IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{1}.png"
-            )
-            img_path = str(new_name)
-            # ── 1er pointage — arrivée ──
-            pointage.numero_pointage = 1
-            pointage.heure_arrive = now
-            pointage.photo_pointage_arrivee = img_path
-            pointage.distance_arrivee = round(best_distance, 4)
-            pointage.heure_depart = HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE
-            pointage.status_depart = ScoringState.PRESENT
-
-            # Statut arrivée selon reconnaissance
-            pointage.status_arrivee = (
-                ScoringState.PENDING if not match_found
-                else ScoringState.RETARD if now > HEURE_LIMITE
-                else ScoringState.PRESENT
-            )
-
-            # Estimation initiale du temps de travail
-            fin = datetime.combine(date.today(), HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE)
-            arrivee = datetime.combine(date.today(), now)
-            delta = fin - arrivee
-            pointage.minutes_travail = int(delta.total_seconds() / 60) if delta.total_seconds() > 0 else 0
-            pointage.minutes_sup = 0
-
-        elif pointage.numero_pointage == 1 :
-            new_name = file.replace(
-                IMG_DIR / current_user.matricule / f"{datetime.now().date()}" / f"img{2}.png"
-            )
-            img_path = str(new_name)
-            # ── 2ème pointage — départ ──
-            pointage.numero_pointage = 2
-            pointage.heure_depart = now
-            pointage.photo_pointage_depart = img_path
-            pointage.distance_depart = round(best_distance, 4)
-            pointage.status_depart = ScoringState.PRESENT if match_found else ScoringState.PENDING
-
-            arrive = datetime.combine(date.today(), pointage.heure_arrive)
-            depart = datetime.combine(date.today(), now)
-            heure_travail = depart - arrive
-            heure_sup = heure_travail - timedelta(hours=JOUNEE_TRAVAIL.hour,minutes=JOUNEE_TRAVAIL.minute,seconds=JOUNEE_TRAVAIL.second)
-            pointage.minutes_travail = int(heure_travail.total_seconds() / 60)
-            pointage.minutes_sup = int(heure_sup.total_seconds() / 60) if heure_sup.total_seconds() > 0 else 0
+        # ── Étape 6 : Mettre à jour selon le numéro de pointage ──
+        if pointage.numero_pointage == 0:
+            traiter_premier_pointage(pointage, match_found, best_distance, img_path, now, settings)
+        elif pointage.numero_pointage == 1:
+            traiter_deuxieme_pointage(pointage, match_found, best_distance, img_path, now, settings)
 
         db.commit()
         db.refresh(pointage)

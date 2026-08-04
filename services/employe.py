@@ -1,22 +1,18 @@
+import asyncio
+import json
+
 import face_recognition
 
+from database.database import get_db
 from models.employe import Employe
 from sqlalchemy.orm import Session
 
+from services.auth import verify_access_token_stream
+from shemas.employe import ResponseModelEmp
 from utils.global_var import FaceRecognitionSetting
 
 
-def get_user_by_id(id: int, db = Session):
-    user_in_db = db.query(Employe).get(id)
-    return user_in_db
 
-def get_user_by_email(email: str, db: Session):
-    user_in_db = db.query(Employe).filter(Employe.email == email).first()
-    return user_in_db
-
-def get_user_by_register_number(register_number: str, db: Session):
-    user_in_db = db.query(Employe).filter(Employe.matricule == register_number).first()
-    return user_in_db
 
 
 def preload_cache(db: Session):
@@ -57,3 +53,22 @@ def clear_cache():
     """Vidage du cache à minuit — à brancher sur le cron"""
     FaceRecognitionSetting.encoding_cache.clear()
     print("Cache des encodages vidé")
+
+async def prodige_donnees_emp(token: str):
+    while True:
+        user = verify_access_token_stream(token)
+
+        if user is None:
+            yield "event: token_expired\ndata: {}\n\n"
+            break
+
+        with get_db() as db:
+            donnees = db.query(Employe).all()
+            payload = [
+                ResponseModelEmp.model_validate(d).model_dump(mode="json")
+                for d in donnees
+            ]
+
+        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        await asyncio.sleep(2)

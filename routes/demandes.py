@@ -1,27 +1,22 @@
-import asyncio
-import json
 import os
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
-from typing import AsyncIterable
 
-import time
 from fastapi import HTTPException, Form, Query
 
 from fastapi import APIRouter, Depends
-from fastapi.encoders import jsonable_encoder
 from fastapi.sse import EventSourceResponse
 
 
-from services.auth import get_current_user, verify_access_token
+from services.auth import get_current_user, verify_access_token, get_user_by_email
 from database.database import get_db
 
 from models.demandes import DemandesInscription
 
 from sqlalchemy import exists, select
 
-from services.demande import verify_picture
-from services.employe import get_user_by_email
+from services.demande import verify_picture, prodige_donnees_dmd
+
 from shemas.demande import (
     ResponseRequest,
     ModelRequest,
@@ -36,16 +31,6 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-"""Récupérer toutes les demandes"""
-"""@router.get("/demandes", response_model=list[ResponseRequest])
-def get_all_(current_user: RequestModelEmp = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=400, detail="we can not access from this route")
-    with get_db() as db:
-        demandes = db.query(DemandesInscription).all()
-    if not demandes:
-        return {"message": "Aucune demande d'inscrition"}
-    return  demandes"""
 
 @router.get("/get_request/{id}", response_model=ResponseRequest)
 def get_all_(id: int ):
@@ -56,30 +41,6 @@ def get_all_(id: int ):
     return  demande
 
 
-import asyncio, json
-
-
-async def prodige_donnees(token: str):
-    while True:
-        # Vérifier le token à chaque itération
-        user = verify_access_token(token)
-
-        if user is None:
-            # Envoyer un événement spécial au lieu de crasher
-            yield f"event: token_expired\ndata: {{}}\n\n"
-            break  # Arrêter le générateur
-
-        with get_db() as db:
-            donnees = db.query(DemandesInscription).all()
-            payload = [
-                ResponseRequest.model_validate(d).model_dump(mode="json")
-                for d in donnees
-            ]
-
-        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(2)
-
-
 @router.get("/demandes")
 async def get_all_stream_req(token: str = Query(...)):
     user = verify_access_token(token)
@@ -88,7 +49,7 @@ async def get_all_stream_req(token: str = Query(...)):
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Accès refusé")
 
-    return EventSourceResponse(prodige_donnees(token))
+    return EventSourceResponse(prodige_donnees_dmd(token))
 
 
 """effectuer une demande d'inscription"""
@@ -115,6 +76,7 @@ async def new_inscrition(dem: ModelRequest = Form(media_type="multipart/form-dat
         email=dem.email,
         telephone=dem.telephone,
         photo=images_location,
+        date_req=date.today(),
         password=dem.password,
         poste=dem.poste,
         hour_req=now
@@ -124,10 +86,14 @@ async def new_inscrition(dem: ModelRequest = Form(media_type="multipart/form-dat
             exists().where(DemandesInscription.matricule == dem.matricule)
         )
         flag = db.scalar(get_exist_dmd)
-        if not flag:
-            db.add(demande)
-            db.commit()
-            db.refresh(demande)
+        if flag:
+            raise HTTPException(
+                status_code=400,
+                detail="Une demande d'inscription existe déjà pour ce matricule."
+            )
+        db.add(demande)
+        db.commit()
+        db.refresh(demande)
     return demande
 
 
