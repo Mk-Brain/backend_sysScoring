@@ -7,10 +7,8 @@ from sqlalchemy import select, exists
 
 from services.auth import get_current_user, get_password_hash, verify_access_token, get_user_by_id
 from database.database import  get_db
-from models.demandes import DemandesInscription
 from models.employe import Employe
 from models.pointages import Pointage
-from models.statistique import Statistique
 from services.demande import verify_picture
 from services.employe import  prodige_donnees_emp
 from services.pointage import IMG_DIR
@@ -58,7 +56,7 @@ def add_user(
         raise HTTPException(status_code=400, detail="we can not access from this route")
 
     with get_db() as db:
-        req = db.query(DemandesInscription).filter(DemandesInscription.email == params.email).first()
+        req = db.query(Employe).filter(Employe.email == params.email).first()
         if not req:
             raise HTTPException(status_code=400, detail="Request do not exist")
 
@@ -231,7 +229,6 @@ def delete_user(id: int, current_user: RequestModelEmp = Depends(get_current_use
             raise HTTPException(status_code=404, detail="User not found")
 
         db.query(Pointage).filter(Pointage.id_user == id).delete()
-        db.query(Statistique).filter(Statistique.id_user == id).delete()
 
         # Suppression des images de pointage (dossier par matricule, sous-dossiers par date)
         folderuser = Path(IMG_DIR) / user.matricule

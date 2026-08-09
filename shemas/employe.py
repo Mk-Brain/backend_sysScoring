@@ -19,6 +19,7 @@ class RequestModelEmp(BaseModel):
 class ValidatedInscriptionModelRequest(BaseModel):
     email:str 
     role: str
+    
 class ResponseModelEmp(BaseModel):
     id : int
     nom : str

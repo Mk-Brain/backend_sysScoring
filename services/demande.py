@@ -4,7 +4,8 @@ import json
 from fastapi import HTTPException, UploadFile ,File
 
 from database.database import get_db
-from models.demandes import DemandesInscription
+
+from models.employe import Employe
 from services.auth import verify_access_token_stream
 from shemas.demande import ResponseRequest
 
@@ -33,7 +34,7 @@ async def prodige_donnees_dmd(token: str):
             break  # Arrêter le générateur
 
         with get_db() as db:
-            donnees = db.query(DemandesInscription).all()
+            donnees = db.query(Employe).all()
             payload = [
                 ResponseRequest.model_validate(d).model_dump(mode="json")
                 for d in donnees
@@ -41,3 +42,5 @@ async def prodige_donnees_dmd(token: str):
 
         yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
         await asyncio.sleep(2)
+
+# TODO: etudier les requete des concernants les demandes et le employé pour voir s'il n'y pas moyen de les fusionnés ou les réduire

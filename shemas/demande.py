@@ -39,9 +39,9 @@ class ResponseRequest(BaseModel):
     photo : str
     poste : str | None = None
     status: str | None = None
-    comments: str | None = None
-    date_req: date 
-    hour_req:  time
+    request_comments: str | None = None
+    request_date: date 
+    request_time:  time
 
     class Config:
         from_attributes = True

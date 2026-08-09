@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pytest import Session
+from sqlalchemy.orm import Session
 
 from models.config import Parametre
 from utils.global_var import SettingApp

@@ -4,7 +4,9 @@ from datetime import date, datetime, time, timedelta
 import time as tm
 
 import cv2
-import face_recognition
+
+
+import face_recognition_models
 import numpy as np
 from fastapi import HTTPException
 
@@ -118,7 +120,7 @@ def take_picture(mat: str):
     img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     # model="small" — cohérent avec get_user_encoding()
-    encs = face_recognition.face_encodings(img_rgb, model="small")
+    encs = face_recognition_models.face_encodings(img_rgb, model="small")
     cap.release()
     return encs if encs else None
 
@@ -218,7 +220,7 @@ def calculer_match(picture_encode: list, user_encode) -> tuple[bool, float]:
     """
     best_distance = 1.0
     for detected_face_encoding in picture_encode:
-        distance = face_recognition.face_distance([user_encode], detected_face_encoding)
+        distance = face_recognition_models.face_distance([user_encode], detected_face_encoding)
         if distance[0] < best_distance:
             best_distance = distance[0]
 

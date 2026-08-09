@@ -1,6 +1,6 @@
 # Système de Pointage - Backend
 
-API FastAPI pour la gestion des employés et du système de pointage.
+Backend FastAPI pour un système de pointage.
 
 ## Installation
 
@@ -48,10 +48,10 @@ backend/
 ├── .env                 # Variables d'environnement (à créer)
 ├── database/
 │   └── database.py      # Configuration SQLAlchemy
-├── models/
-│   └── employe.py       # Modèle Employé
-├── routes/
-│   └── employe.py       # Routes pour les employés
+├── models/              # Modèles de données
+│
+├── routes/              # Routes décrivants fonctionnalités
+├── shemas/              # Types de données manipulés
 ├── services/            # Logique métier
 ├── auth/                # Authentification
 └── assets/              # Fichiers ML et ressources
@@ -63,3 +63,4 @@ backend/
 - **SQLAlchemy** - ORM pour base de données
 - **PyMySQL** - Driver MySQL
 - **Pydantic** - Validation de données
+- **Alembic** - création et mise à jour des tables de la bd

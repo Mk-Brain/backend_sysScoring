@@ -8,10 +8,9 @@ from fastapi import APIRouter, Depends
 from fastapi.sse import EventSourceResponse
 
 
+from models.employe import Employe
 from services.auth import get_current_user, verify_access_token, get_user_by_email
 from database.database import get_db
-
-from models.demandes import DemandesInscription
 
 from sqlalchemy import exists, select
 
@@ -31,15 +30,16 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-
+#recupérer la demande d'inscription d'un nouvel employé
 @router.get("/get_request/{id}", response_model=ResponseRequest)
 def get_all_(id: int ):
     with get_db() as db:
-        demande = db.query(DemandesInscription).filter(DemandesInscription.id == id).first()
+        demande = db.query(Employe).filter(Employe.id == id).first()
     if not demande:
         raise HTTPException(status_code="401", detail="demande non trouvés")
     return  demande
 
+# TODO: protége la route de de récupération d'une demande avec un token d'inscription
 
 @router.get("/demandes")
 async def get_all_stream_req(token: str = Query(...)):
@@ -68,7 +68,7 @@ async def new_inscrition(dem: ModelRequest = Form(media_type="multipart/form-dat
     with open(images_location, "wb") as f:
         content = await dem.photo.read()
         f.write(content)
-    demande = DemandesInscription(
+    demande = Employe(
         nom=dem.nom,
         prenom=dem.prenom,
         sexe=dem.sexe,
@@ -76,14 +76,14 @@ async def new_inscrition(dem: ModelRequest = Form(media_type="multipart/form-dat
         email=dem.email,
         telephone=dem.telephone,
         photo=images_location,
-        date_req=date.today(),
+        request_date=date.today(),
         password=dem.password,
         poste=dem.poste,
-        hour_req=now
+        request_time=now
     )
     with get_db() as db:
         get_exist_dmd = select(
-            exists().where(DemandesInscription.matricule == dem.matricule)
+            exists().where(Employe.matricule == dem.matricule)
         )
         flag = db.scalar(get_exist_dmd)
         if flag:
@@ -112,11 +112,11 @@ async def update_inscrition(
         with open(images_location, "wb") as f:
             content = await dem.photo.read()
             f.write(content)
-    dmd = DemandesInscription()
+    dmd = Employe()
     with get_db() as db:
         dmd = (
-            db.query(DemandesInscription)
-            .filter(DemandesInscription.id == int(dem.id_req))
+            db.query(Employe)
+            .filter(Employe.id == int(dem.id_req))
             .first()
         )
         dmd.hour_req = datetime.now().time()
@@ -151,19 +151,19 @@ async def update_inscrition(
 def change_status(
     id: int,
     status: str,
-    comments: str | None = None,
+    request_comments: str | None = None,
     current_user: RequestModelEmp = Depends(get_current_user),
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=400, detail="we can not access from this route")
-    demande = DemandesInscription()
+    demande = Employe()
     with get_db() as db:
-        demande = db.query(DemandesInscription).get(id)
+        demande = db.query(Employe).get(id)
         if not demande:
             raise HTTPException(status_code=400, detail="inscription request not found")
         demande.status = status
-        if comments:
-            demande.comments = comments
+        if request_comments:
+            demande.request_comments = request_comments
         db.commit()
         db.refresh(demande)
     return demande
@@ -180,7 +180,7 @@ def delete_request(id: int, current_user: RequestModelEmp = Depends(get_current_
 
     with get_db() as db:
         demande = (
-            db.query(DemandesInscription).filter(DemandesInscription.id == id).first()
+            db.query(Employe).filter(Employe.id == id).first()
         )
 
         if not demande:

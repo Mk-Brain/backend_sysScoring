@@ -2,7 +2,7 @@ services:
   - type: web
     name: pointage-api
     env: python
-    region: frankfurt  # ✅ plus proche de l'Afrique
+    region: frankfurt  
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT

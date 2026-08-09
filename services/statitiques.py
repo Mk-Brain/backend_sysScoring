@@ -9,11 +9,10 @@ from sqlalchemy.orm import Session
 from database.database import get_db
 from models.employe import Employe
 from models.pointages import Pointage, ScoringState
-from models.statistique import  Statistique
+
 
 from collections import defaultdict
 
-from models.demandes import DemandesInscription
 from sqlalchemy.orm import joinedload
 
 import calendar
@@ -22,79 +21,6 @@ from sqlalchemy import func, or_, case
 from services.auth import verify_access_token_stream
 
 DUREE_NORMALE = 8 * 60
-
-def init_stats_month(db,employe_id, date_debut,date_fin):
-        stat = Statistique(
-            type_periode="month",
-            date_debut=date_debut,
-            date_fin=date_fin,
-            nb_presence=0,
-            nb_absence=0,
-            nb_retard=0,
-            total_minutes_travail=0,
-            total_minutes_sup=0,
-            total_minutes_absence=0,
-            id_user=employe_id
-        )
-
-        db.add(stat)
-
-
-
-def init_stats_year(db,employe_id,date_debut,date_fin):
-        stat = Statistique(
-            type_periode="year",
-            date_debut=date_debut,
-            date_fin=date_fin,
-            nb_presence=0,
-            nb_absence=0,
-            nb_retard=0,
-            total_minutes_travail=0,
-            total_minutes_sup=0,
-            total_minutes_absence=0,
-            id_user=employe_id
-        )
-
-        db.add(stat)
-
-
-
-def init_stats_week(db,employe_id,date_debut,date_fin):
-        stat = Statistique(
-            type_periode="week",
-            date_debut=date_debut,
-            date_fin=date_fin,
-            nb_presence=0,
-            nb_absence=0,
-            nb_retard=0,
-            total_minutes_travail=0,
-            total_minutes_sup=0,
-            total_minutes_absence=0,
-            id_user=employe_id
-        )
-
-        db.add(stat)
-
-
-def recuperer_statistique_active(
-    db,
-    employe_id,
-    type_periode,
-    date_jour
-):
-
-    return (
-        db.query(Statistique)
-        .filter(
-            Statistique.id_user == employe_id,
-            Statistique.type_periode == type_periode,
-            Statistique.date_debut <= date_jour,
-            Statistique.date_fin >= date_jour
-        )
-        .first()
-    )
-
-
 
 
 
@@ -144,81 +70,6 @@ def mettre_a_jour_statistique(
             minutes_travail - DUREE_NORMALE
         )
 
-
-def mettre_a_jour_toutes_les_statistiques(
-    db,
-    pointage,
-    minutes_travail
-):
-
-    # Un pointage incomplet (arrivée sans départ confirmé) ne doit
-    # impacter aucune période de statistique.
-    if pointage.status_arrivee == ScoringState.PENDING:
-        return
-
-    types = [
-        "week",
-        "month",
-        "year"
-    ]
-    # appliquer la mise à jour pour chaque periode
-    for type_periode in types:
-
-        stat = recuperer_statistique_active(
-            db,
-            pointage.id_user,
-            type_periode,
-            pointage.date_day
-        )
-
-        if stat:
-
-            mettre_a_jour_statistique(
-                stat,
-                pointage,
-                minutes_travail
-            )
-
-    db.commit()
-
-
-
-
-def traitement_statistiques_journalieres(db: Session):
-
-    aujourd_hui = date.today()
-
-    employes = db.query(Employe).all()
-
-    for employe in employes:
-        #recuperer le pointage et mettre à jour ses statistiques
-        pointage = (
-            db.query(Pointage)
-            .filter(
-                Pointage.id_user == employe.id,
-                Pointage.date_day == aujourd_hui
-            )
-            .first()
-        )
-
-        if not pointage:
-            break
-
-        minutes_travail = 0
-
-        if pointage.heure_arrive is not None and pointage.heure_depart is not None:
-            minutes_travail = calculer_minutes_travail(
-                pointage.heure_arrive,
-                pointage.heure_depart
-            )
-
-            mettre_a_jour_toutes_les_statistiques(
-                db,
-                pointage,
-                minutes_travail
-            )
-
-    db.commit()
 
 
 def calculer_minutes_travail(heure_arrive: time, heure_depart: time) -> int:
@@ -714,8 +565,8 @@ async def prodige_donnees_dashbord(token: str):
 
             # ===== 4. COUNTERS NOTIFICATIONS =====
             inscriptions_attente = (
-                db.query(DemandesInscription)
-                .filter(DemandesInscription.status == "pending")
+                db.query(Employe)
+                .filter(Employe.status == "pending")
                 .count()
             )
 

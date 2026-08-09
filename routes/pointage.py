@@ -6,7 +6,6 @@ from fastapi import HTTPException, Depends, APIRouter, Query
 from fastapi.sse import EventSourceResponse
 from sqlalchemy.orm import joinedload
 
-from models.statistique import Statistique
 from services.auth import get_current_user, verify_access_token
 from database.database import get_db
 from models.employe import Employe
@@ -166,7 +165,6 @@ def delete_user(id: int, current_user: RequestModelEmp = Depends(get_current_use
             raise HTTPException(status_code=404, detail="User not found")
 
         db.query(Pointage).filter(Pointage.id_user == id).delete()
-        db.query(Statistique).filter(Statistique.id_user == id).delete()
 
         # Suppression des images de pointage (dossier par matricule, sous-dossiers par date)
         folderuser = Path(IMG_DIR) / user.matricule

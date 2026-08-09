@@ -6,10 +6,9 @@ from sqlalchemy import pool
 
 from alembic import context
 from database.database import Base, DATABASE_URL
-from models.demandes import DemandesInscription
+
 from models.employe import Employe
 from models.pointages import Pointage
-from models.statistique import Statistique
 from models.config import Parametre
 
 # this is the Alembic Config object, which provides
