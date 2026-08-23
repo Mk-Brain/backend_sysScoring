@@ -1,44 +1,8 @@
 from pydantic import BaseModel
-
-
-class RequestModelEmp(BaseModel):
-    id : int
-    nom : str
-    prenom: str
-    matricule : str
-    sexe : str
-    telephone : str
-    photo : str
-    qrCode : str
-    role: str
-    email : str
-    password : str
-    poste : str
-    status: str | None
-
-class ValidatedInscriptionModelRequest(BaseModel):
-    email:str 
-    role: str
-    
-class ResponseModelEmp(BaseModel):
-    id : int
-    nom : str
-    prenom: str
-    matricule : str
-    sexe : str
-    telephone : str
-    photo : str
-    qrCode : str
-    role: str
-    email : str
-    poste : str
-    status: str | None
-
-    class Config:
-        from_attributes = True
-
-
 from fastapi import UploadFile
+
+#TODO: renommer les types de données et ajouter des commentaire pour mieux les identifier
+"""API queries parameters"""
 
 class RequestModelNewEmp(BaseModel):
     nom: str
@@ -47,12 +11,28 @@ class RequestModelNewEmp(BaseModel):
     sexe: str
     telephone: str
     photo: UploadFile
-    qrCode: str = "employe"
-    role: str
+    role: str = "employe"
     email: str
     password: str
     poste: str
     status: str | None
 
-class UpdateStatusRequest(BaseModel):
-    status: str  # "actif" | "inactif"
+
+
+""" API answers """
+class ResponseModelEmp(BaseModel):
+    id : int
+    nom : str
+    prenom: str
+    matricule : str
+    sexe : str
+    telephone : str
+    photo : str
+    qr_code : str | None
+    role: str
+    email : str
+    poste : str
+    status: str | None
+
+    class Config:
+        from_attributes = True

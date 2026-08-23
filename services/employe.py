@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 
 import face_recognition
 
@@ -72,3 +73,11 @@ async def prodige_donnees_emp(token: str):
         yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
         await asyncio.sleep(2)
+
+def delete_picture(path: str):
+    try:
+        picture = Path(path)
+        if picture.exists() and picture.is_file():
+                picture.unlink()
+    except OSError as e:
+        print(f"Erreur suppression photo: {e}")

@@ -20,16 +20,13 @@ from pathlib import Path
 from pyzbar.pyzbar import decode
 from pyzbar.wrapper import ZBarSymbol
 
-from services.auth import verify_access_token, verify_access_token_stream
+from services.auth import verify_access_token_stream
 from shemas.pointage import ChangeStatusPointageRequest, ModelScoring
+from utils.global_var import IMG_DIR, VIDEO_URL, FaceRecognitionSetting
 
-BASE_DIR = Path(__file__).parent
 
-modelFile = str(BASE_DIR / "assets" / "res10_300x300_ssd_iter_140000_fp16.caffemodel")
-configFile = str(BASE_DIR / "assets" / "deploy.prototxt")
-
-net = cv2.dnn.readNetFromCaffe(configFile, modelFile)
-
+net = FaceRecognitionSetting.net 
+url = VIDEO_URL
 
 """fonction d'initialisation des pointages"""
 def init_pointage(db: Session):
@@ -67,8 +64,6 @@ def init_pointage(db: Session):
         db.add(scoring)
     db.commit()
 
-IMG_DIR = Path.cwd().parent / "backend" / "img" 
-url = "http://192.168.10.150:8001/videostream"
 
 def take_picture(mat: str):
     """
@@ -233,7 +228,7 @@ def archiver_photo(matricule: str, numero: int) -> str:
     Renomme img.png en imgN.png pour archiver la photo du pointage.
     Retourne le chemin du fichier archivé.
     """
-    file = Path(IMG_DIR / matricule / f"{date.today()}" / "img.png")
+    file = IMG_DIR / matricule / f"{date.today()}" / "img.png"
 
     if not file.exists():
         raise HTTPException(status_code=404, detail="Photo de pointage introuvable.")

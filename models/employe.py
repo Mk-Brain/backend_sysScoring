@@ -36,7 +36,7 @@ class Employe(Base):
     password = Column(String(255), nullable=True)
     poste = Column(String(50), nullable=True)
     qr_code = Column(String(255), nullable=True, unique=True)
-    status = Column(Enum(StatutEmploye), default=StatutEmploye.ACTIF, nullable=False)
+    status = Column(Enum(StatutEmploye), default=StatutEmploye.PENDING, nullable=False)
     role = Column(Enum(RoleEmploye), default=RoleEmploye.EMPLOYE, nullable=False)
 
     # Champs liés à une éventuelle demande d'inscription / validation
@@ -47,9 +47,9 @@ class Employe(Base):
 
     # Relations
     pointages = relationship("Pointage", back_populates="users")
-    #statistiques = relationship('Statistique', back_populates='users')
+    
 
-# TODO: fusionner les tables Employe et demande, car elles contiennent des informations redondantes sur les employés. Il est préférable de n'avoir qu'une seule table pour gérer les informations des employés et leurs demandes.
+
 
 
 

@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import date
+import os
 from pathlib import Path
 
 import cv2
@@ -18,29 +19,26 @@ from routes.auth import router as auth_router
 from routes.statistiques import router as stats_router
 from routes.settings import router as settings_router
 from services.Setting import get_settings
+from services.demande import delete_inscription
 from services.employe import preload_cache, clear_cache
 from services.pointage import init_pointage
 
-from utils.global_var import VideoSetting, FaceRecognitionSetting
+from utils.global_var import IMG_DIR, UPLOAD_DIR, configFile, modelFile,FaceRecognitionSetting
 
 
 load_dotenv()
 
-# ── Modèle DNN ──
-BASE_DIR = Path(__file__).parent
-modelFile = str(BASE_DIR / "assets" / "res10_300x300_ssd_iter_140000_fp16.caffemodel")
-configFile = str(BASE_DIR / "assets" / "deploy.prototxt")
-#FaceRecognitionSetting.net = cv2.dnn.readNetFromCaffe(configFile, modelFile)
 
 
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(IMG_DIR, exist_ok=True)
 
 
-# ── Caméra ──
-def start_read():
-    """Lecture continue du flux vidéo dans un thread séparé"""
+"""Lecture continue du flux vidéo"""
+"""def start_read():
     cap = cv2.VideoCapture(VideoSetting.camera_id)
     while True:
-        VideoSetting.flag, VideoSetting.frame = cap.read()
+        VideoSetting.flag, VideoSetting.frame = cap.read()"""
 
 
 # ── Lifespan ──
@@ -50,13 +48,15 @@ async def lifespan(app: FastAPI):
     """thread = threading.Thread(target=start_read, daemon=True)
     thread.start()
     print("Caméra démarrée")"""
+    # 2. Charger le modèle de reconnaissance faciale
+    FaceRecognitionSetting.net = cv2.dnn.readNetFromCaffe(configFile, modelFile)
 
     with get_db() as db:
-        #  Précharger le cache des encodages
+        # 3. Précharger le cache des encodages
         preload_cache(db)
-        # 2. initialiser les pointages
+        # 4. initialiser les pointages
         init_pointage(db=db)
-        # 2. Précharger les paramètres
+        # 5. Précharger les paramètres
         get_settings(db)
 
     print("Application prête")
@@ -84,11 +84,13 @@ def init_scoring():
         return init_pointage(db=db)
 
 @crons.cron(expr="0 0 * * *", name="clear cache")
-def clear_():
+def clear_faceprint_cache():
     """Vidage du cache à minuit"""
     clear_cache()
 
-
+@crons.cron(expr="*/1 * * * *", name="delete expired inscriptions")
+def delete_expired_inscriptions():
+        return delete_inscription()
 
 
 origins = [
@@ -118,3 +120,5 @@ def home():
 def health_check():
     return {"status": "OK"}
 
+# TODO: implémenter les https
+# TODO: implémenter le liveness detection

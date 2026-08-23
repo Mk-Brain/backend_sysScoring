@@ -6,7 +6,7 @@ from models.employe import Employe
 from services.Setting import update_cache_settings
 from services.auth import get_current_user
 from shemas.Setting import Setting, SettingResponsModel
-from shemas.employe import RequestModelEmp
+
 from utils.global_var import SettingApp
 
 router = APIRouter(
@@ -49,7 +49,7 @@ async def get_settings(current_user: Employe = Depends(get_current_user)):
     return settings
 
 @router.get("/get_settings")
-def get_settings_public(current_user: RequestModelEmp = Depends(get_current_user)):
+def get_settings_public(current_user: Employe = Depends(get_current_user)):
     """Retourne les paramètres nécessaires au pointage côté mobile"""
     return {
         "HEURE_ARRIVEE": str(SettingApp.setting_cash.get("HEURE_ARRIVEE", "08:00:00")),
@@ -59,3 +59,4 @@ def get_settings_public(current_user: RequestModelEmp = Depends(get_current_user
         "HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE": str(SettingApp.setting_cash.get("HEURE_LIMITE_AVANT_DEUXIEME_POINTAGE", "10:00:00")),
         "JOUNEE_TRAVAIL": str(SettingApp.setting_cash.get("JOUNEE_TRAVAIL", "08:00:00")),
     }
+

@@ -1,24 +1,18 @@
-import json
 from datetime import  datetime
 
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.sse import EventSourceResponse
 
-from decimal import Decimal
-
-from services.auth import get_current_user, verify_access_token
-from database.database import get_db
+from services.auth import  verify_access_token
 from services.statitiques import prodige_statistique_employe, prodige_donnees_dashbord, prodige_donnees_rapport
 
-from shemas.employe import RequestModelEmp
+
 
 router = APIRouter(
     prefix="/statistiques",
     tags=["statistiques"],
 )
-
-
 
 
 @router.get("/stats_employe")
@@ -67,8 +61,3 @@ async def get_repport_stream(
 
 
 
-class CustomEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super().default(obj)

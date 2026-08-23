@@ -9,13 +9,13 @@ from sqlalchemy.orm import joinedload
 from services.auth import get_current_user, verify_access_token
 from database.database import get_db
 from models.employe import Employe
-from models.pointages import Pointage, ScoringState
+from models.pointages import Pointage
 from services.employe import get_user_encoding
-from services.pointage import IMG_DIR, traiter_premier_pointage, traiter_deuxieme_pointage, archiver_photo, \
+from services.pointage import traiter_premier_pointage, traiter_deuxieme_pointage, archiver_photo, \
     get_or_create_pointage, calculer_match, take_picture, readqr, appliquer_changement_statut, prodige_donnees_pointages
-from shemas.employe import RequestModelEmp
+
 from shemas.pointage import ChangeStatusPointageRequest, ModelScoring
-from utils.global_var import SettingApp
+from utils.global_var import IMG_DIR, SettingApp
 
 router = APIRouter(prefix="/pointage", tags=["pointage"])
 
@@ -35,7 +35,7 @@ async def get_all_stream_req(token: str = Query()):
 
 """Récupérer tous les pointages d'un user specifique"""
 @router.get("/my_scoring", response_model=list[ModelScoring])
-def get_all_pointages(current_user: RequestModelEmp | None = Depends(get_current_user)):
+def get_all_pointages(current_user: Employe | None = Depends(get_current_user)):
     with get_db() as db:
         pointages = db.query(Pointage).options(joinedload(Pointage.users)).filter(Pointage.id_user == current_user.id).all()
         if not pointages:
@@ -48,7 +48,7 @@ def get_all_pointages(current_user: RequestModelEmp | None = Depends(get_current
 def change_pointage_status(
     id: int,
     body: ChangeStatusPointageRequest,
-    current_user: RequestModelEmp = Depends(get_current_user),
+    current_user: Employe = Depends(get_current_user),
 ):
     """
     Permet à l'admin de modifier manuellement le statut d'un pointage.
@@ -100,7 +100,7 @@ def scan_qr(mat: str):
 
 """pointer sa présence"""
 @router.post("/pointer")
-def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
+def pointer(current_user: Employe = Depends(get_current_user)):
     """
     Endpoint de pointage — orchestre les différentes étapes :
     1. Capture et encodage du visage
@@ -155,7 +155,7 @@ def pointer(current_user: RequestModelEmp = Depends(get_current_user)):
 
 
 @router.delete("/delete/{id}")
-def delete_user(id: int, current_user: RequestModelEmp = Depends(get_current_user)):
+def delete_user(id: int, current_user: Employe = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="You can not access from this route")
 
@@ -167,10 +167,11 @@ def delete_user(id: int, current_user: RequestModelEmp = Depends(get_current_use
         db.query(Pointage).filter(Pointage.id_user == id).delete()
 
         # Suppression des images de pointage (dossier par matricule, sous-dossiers par date)
-        folderuser = Path(IMG_DIR) / user.matricule
+        
         try:
-            if folderuser.exists() and folderuser.is_dir():
-                shutil.rmtree(folderuser)
+            userFolder = IMG_DIR / Path(user.matricule)
+            if userFolder.exists() and userFolder.is_dir():
+                shutil.rmtree(userFolder)
         except OSError as e:
             print(f"Erreur suppression dossier pointage: {e}")
 

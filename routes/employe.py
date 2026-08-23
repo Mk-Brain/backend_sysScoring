@@ -3,26 +3,26 @@ import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Form
 from fastapi.sse import EventSourceResponse
-from sqlalchemy import select, exists
 
-from services.auth import get_current_user, get_password_hash, verify_access_token, get_user_by_id
+
+from services.auth import get_current_user, get_password_hash, get_user_by_email, verify_access_token, get_user_by_id
 from database.database import  get_db
-from models.employe import Employe
+from models.employe import Employe, StatutEmploye
 from models.pointages import Pointage
+
 from services.demande import verify_picture
-from services.employe import  prodige_donnees_emp
-from services.pointage import IMG_DIR
-from shemas.employe import ResponseModelEmp, RequestModelEmp, ValidatedInscriptionModelRequest, RequestModelNewEmp, \
-    UpdateStatusRequest
+from services.employe import  delete_picture, prodige_donnees_emp
+
+from shemas.employe import ResponseModelEmp, RequestModelNewEmp
 from fastapi.responses import FileResponse
+
+from utils.global_var import IMG_DIR, UPLOAD_DIR
+
 
 router = APIRouter(
     prefix="/employe",
     tags=["employe"]
 )
-
-
-
 
 """Récupérer tous les employés"""
 @router.get("/users")
@@ -41,52 +41,43 @@ async def get_all_stream_user(token: str = Query(...)):
 
 "recuperer l'utilisateur connecté"
 @router.get("/self", response_model=ResponseModelEmp)
-async def read_users_me(current_user: RequestModelEmp | None = Depends(get_current_user)):
+async def read_users_me(current_user: Employe | None = Depends(get_current_user)):
     return current_user    
 
 
 
-"""valider une inscrition"""
-@router.post("/add_user", response_model=ResponseModelEmp)
+"""valider / regéter une inscription"""
+@router.post("/add_user")
 def add_user(
-    params: ValidatedInscriptionModelRequest,
-    current_user: RequestModelEmp | None = Depends(get_current_user)
+    email:str,
+    role: str,
+    current_user: Employe | None = Depends(get_current_user)
 ):
-    if current_user and current_user.role != "admin":
+    if current_user.role != "admin":
         raise HTTPException(status_code=400, detail="we can not access from this route")
-
+    if role not in ("admin", "employe"):
+        raise HTTPException(status_code=400, detail="Role invalide")
     with get_db() as db:
-        req = db.query(Employe).filter(Employe.email == params.email).first()
-        if not req:
+        emp = db.query(Employe).filter(Employe.email == email).first()
+        if not emp:
             raise HTTPException(status_code=400, detail="Request do not exist")
-
-        req.status = "accepted"
-
-        hashed_password = get_password_hash(req.password)
-        qrcode = req.nom + "-" + req.matricule + "-" + req.email
-
-        emp = Employe(
-            nom=req.nom,
-            prenom=req.prenom,
-            matricule=req.matricule,
-            sexe=req.sexe,
-            telephone=req.telephone,
-            photo=req.photo,
-            qrCode=qrcode,
-            email=req.email,
-            password=hashed_password,
-            poste=req.poste,
-            role=params.role,
-            status="actif"
-        )
-        db.add(emp)
+        qrcode = f"{emp.nom} - {emp.matricule}"
+        emp.role = role
+        emp.qr_code = qrcode
+        emp.status = StatutEmploye.ACTIF
         db.commit()
-        db.refresh(emp)
 
-    return emp
+    return {"message": "success"}
 
-@router.post("/new_user", response_model=ResponseModelEmp)
-async def new_user(dem: RequestModelNewEmp = Form(media_type="multipart/form-data")):
+# FIXME: protéger la route d'ajout d'uun nouvel utilisateur par l'admin
+"""Ajouter directement un nouvel employé sans passé par l'inscription"""
+@router.post("/new_user")
+async def new_user(
+    dem: RequestModelNewEmp = Form(media_type="multipart/form-data"),
+    current_user: Employe | None = Depends(get_current_user)
+    ):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=400, detail="we can not access from this route")
     # verification de l'extension
     await verify_picture(dem.photo)
     await dem.photo.seek(0)
@@ -96,6 +87,7 @@ async def new_user(dem: RequestModelNewEmp = Form(media_type="multipart/form-dat
         content = await dem.photo.read()
         f.write(content)
     hashed_password = get_password_hash(dem.password)
+    qrcode = f"{dem.nom} - {dem.matricule}"
     demande = Employe(
         nom=dem.nom,
         prenom=dem.prenom,
@@ -106,40 +98,35 @@ async def new_user(dem: RequestModelNewEmp = Form(media_type="multipart/form-dat
         photo=images_location,
         password=hashed_password,
         poste=dem.poste,
-        qrCode=dem.qrCode,
+        qr_code=qrcode,
         role=dem.role,
         status=dem.status
     )
     with get_db() as db:
-        get_exist_dmd = select(
-            exists().where(Employe.matricule == dem.matricule)
-        )
-        flag = db.scalar(get_exist_dmd)
-        if not flag:
-            db.add(demande)
-            db.commit()
-            db.refresh(demande)
-    return demande
+        user = get_user_by_email(dem.email, db)
+        if user:
+            raise HTTPException(status_code=400, detail="L'utilisateur existe déjà")
+        db.add(demande)
+        db.commit()
+            
+    return {"message": "success"}
 
 
 """modifier un utilisateur"""
 @router.put("/update_user", response_model=ResponseModelEmp)
 def update_user(id_user: int,
-                current_user: RequestModelEmp | None = Depends(get_current_user),
                 nom : str | None = None,
                 prenom : str | None = None,
                 matricule : str | None = None,
                 sexe : str | None = None,
                 telephone : str | None = None,
                 photo : str | None = None,
-                qr_code : str | None = None,
                 role: str | None = None,
                 email : str | None = None,
-                password : str | None = None,
                 poste : str | None = None,
-                status: str | None = None
+                current_user: Employe | None = Depends(get_current_user)
                 ):
-    if current_user and current_user.role != "admin":
+    if current_user.role != "admin":
         raise HTTPException(status_code=400, detail="we can not access from this route")
     to_update = Employe()
     with get_db() as db:
@@ -161,31 +148,28 @@ def update_user(id_user: int,
             to_update.telephone = telephone
         if photo:
             to_update.photo = photo
-        if qr_code:
-            to_update.qrCode = qr_code
         if role:
             to_update.role = role
-        if password:
-            to_update.password = password
         if poste:
             to_update.poste = poste
-        if status:
-            to_update.status = status
+        if nom or matricule:
+            to_update.qr_code = f"{to_update.nom} - {to_update.matricule}"
         db.commit()
         db.refresh(to_update)
     return to_update
 
-UPLOAD_DIR = Path("uploads")
 
+
+#retourne une photo de reférence à partir du matricule
 @router.get("/picture", response_class=FileResponse)
 async def picture(name: str):
-    file_path = UPLOAD_DIR / f"{name}.jpg"
-
+    file_path = Path(UPLOAD_DIR) / f"{name}.jpg"
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Image non trouvée")
 
     return FileResponse(file_path)
 
+#retourne n'importe quelle image ayant un chemin valide
 @router.get("/scoring_picture", response_class=FileResponse)
 async def scoring_picture(name: str):
     file = Path(name)
@@ -195,16 +179,17 @@ async def scoring_picture(name: str):
     return FileResponse(file)
 
 
+"""Modifier le status d'un employé"""
 @router.patch("/{user_id}/status")
 def update_status(
     user_id: int,
-    payload: UpdateStatusRequest,
-    current_user: RequestModelEmp = Depends(get_current_user)
+    status: str ,
+    current_user: Employe = Depends(get_current_user)
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Accès refusé")
 
-    if payload.status not in ("actif", "inactif"):
+    if status not in ("actif", "inactif", "pending", "rejected"):
         raise HTTPException(status_code=400, detail="Statut invalide")
 
     with get_db() as db:
@@ -212,14 +197,17 @@ def update_status(
         if not emp:
             raise HTTPException(status_code=404, detail="Employé introuvable")
 
-        emp.status = payload.status
+        emp.status = status
         db.commit()
         db.refresh(emp)
 
-    return {"message": "success", "status": payload.status}
+    return {"message": "success", "status": status}
+# TODO: supprimmer la route de modification de status et passer par la route de modif générale de l'utilisateur
 
+
+"""Supprimer un employé"""
 @router.delete("/delete/{id}")
-def delete_user(id: int, current_user: RequestModelEmp = Depends(get_current_user)):
+def delete_user(id: int, current_user: Employe = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="You can not access from this route")
 
@@ -239,12 +227,7 @@ def delete_user(id: int, current_user: RequestModelEmp = Depends(get_current_use
             print(f"Erreur suppression dossier pointage: {e}")
 
         # Suppression de la photo de profil
-        try:
-            picture = Path(user.photo)
-            if picture.exists() and picture.is_file():
-                picture.unlink()
-        except OSError as e:
-            print(f"Erreur suppression photo: {e}")
-
+        delete_picture(user.photo)
         db.delete(user)
         db.commit()
+

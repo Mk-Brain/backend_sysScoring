@@ -4,8 +4,6 @@ from datetime import timedelta
 from datetime import date, datetime, time
 
 
-from sqlalchemy.orm import Session
-
 from database.database import get_db
 from models.employe import Employe
 from models.pointages import Pointage, ScoringState
